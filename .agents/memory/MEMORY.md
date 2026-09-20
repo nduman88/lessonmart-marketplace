@@ -1,0 +1,1 @@
+- [Targeted workspace package installs](package-install-quirk.md) — dependency additions must target the owning pnpm workspace package, not the monorepo root.

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "LessonMart Marketplace"
+description = "A Nigerian digital marketplace where teachers sell lesson notes, past questions, schemes of work, and classroom resources to students and fellow educators."
+version = "1.0.0"
+id = "artifacts/lessonmart"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21719
+
+[services.development]
+run = "pnpm --filter @workspace/lessonmart run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/lessonmart", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/lessonmart/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21719"
+BASE_PATH = "/"

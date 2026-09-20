@@ -10,6 +10,12 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: marketplace
+    description: Marketplace catalog and checkout operations
+  - name: seller
+    description: Seller workspace operations
+  - name: admin
+    description: Admin workspace operations
 paths:
   /healthz:
     get:
@@ -24,6 +30,136 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /products:
+    get:
+      operationId: listProducts
+      tags: [marketplace]
+      summary: List marketplace products
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: subject
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 18
+      responses:
+        "200":
+          description: Product catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+  /products/{productId}:
+    get:
+      operationId: getProduct
+      tags: [marketplace]
+      summary: Get a marketplace product
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Product details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: Product not found
+  /marketplace/summary:
+    get:
+      operationId: getMarketplaceSummary
+      tags: [marketplace]
+      summary: Get marketplace summary metrics
+      responses:
+        "200":
+          description: Summary metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceSummary"
+  /orders:
+    post:
+      operationId: createOrder
+      tags: [marketplace]
+      summary: Create a marketplace order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderInput"
+      responses:
+        "201":
+          description: Created order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+  /seller/overview:
+    get:
+      operationId: getSellerOverview
+      tags: [seller]
+      summary: Get seller dashboard metrics
+      responses:
+        "200":
+          description: Seller overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SellerOverview"
+  /seller/products:
+    post:
+      operationId: createSellerProduct
+      tags: [seller]
+      summary: Create a seller product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellerProductInput"
+      responses:
+        "201":
+          description: Created seller product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+  /admin/overview:
+    get:
+      operationId: getAdminOverview
+      tags: [admin]
+      summary: Get admin dashboard metrics
+      responses:
+        "200":
+          description: Admin overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOverview"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +169,127 @@ components:
           type: string
       required:
         - status
+    Seller:
+      type: object
+      properties:
+        name:
+          type: string
+        initials:
+          type: string
+        verified:
+          type: boolean
+      required: [name, initials, verified]
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        subject:
+          type: string
+        classLevel:
+          type: string
+        price:
+          type: number
+        rating:
+          type: number
+        sales:
+          type: integer
+        badge:
+          type: ["string", "null"]
+        coverColor:
+          type: string
+        coverLabel:
+          type: string
+        seller:
+          $ref: "#/components/schemas/Seller"
+      required: [id, title, description, category, subject, classLevel, price, rating, sales, badge, coverColor, coverLabel, seller]
+    MarketplaceSummary:
+      type: object
+      properties:
+        notes:
+          type: integer
+        sellers:
+          type: integer
+        paid:
+          type: number
+        buyersToday:
+          type: integer
+      required: [notes, sellers, paid, buyersToday]
+    OrderInput:
+      type: object
+      properties:
+        productId:
+          type: string
+        buyerEmail:
+          type: string
+          format: email
+        paymentReference:
+          type: string
+      required: [productId, buyerEmail]
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+        productId:
+          type: string
+        amount:
+          type: number
+        commission:
+          type: number
+        sellerAmount:
+          type: number
+        status:
+          type: string
+        createdAt:
+          type: string
+      required: [id, productId, amount, commission, sellerAmount, status, createdAt]
+    SellerOverview:
+      type: object
+      properties:
+        totalEarnings:
+          type: number
+        availablePayout:
+          type: number
+        totalSales:
+          type: integer
+        views:
+          type: integer
+        pendingProducts:
+          type: integer
+      required: [totalEarnings, availablePayout, totalSales, views, pendingProducts]
+    SellerProductInput:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        subject:
+          type: string
+        classLevel:
+          type: string
+        price:
+          type: number
+      required: [title, description, category, subject, classLevel, price]
+    AdminOverview:
+      type: object
+      properties:
+        totalRevenue:
+          type: number
+        commission:
+          type: number
+        pendingApprovals:
+          type: integer
+        payouts:
+          type: number
+      required: [totalRevenue, commission, pendingApprovals, payouts]
 

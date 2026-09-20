@@ -1,6 +1,6 @@
-# [Project name]
+# LessonMart Marketplace
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+LessonMart is a responsive Nigerian marketplace for buying and selling lesson notes, exam preparation, and classroom resources.
 
 ## Run & Operate
 
@@ -22,23 +22,34 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/lessonmart/src/App.tsx` — storefront, product detail, cart, checkout handoff, seller workspace, and admin workspace
+- `artifacts/lessonmart/src/index.css` — LessonMart visual tokens and responsive styling
+- `artifacts/api-server/src/routes/marketplace.ts` — typed marketplace endpoints and demo catalog data
+- `lib/api-spec/openapi.yaml` — source of truth for marketplace API contracts
+- `lib/api-client-react/src/generated/` — generated React Query hooks and types
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Marketplace contracts are defined OpenAPI-first and generated into the shared React client and Zod schemas.
+- The first build uses a typed in-memory API catalog so browsing, seller uploads, orders, and dashboards work without requiring third-party keys.
+- The frontend keeps demo fallbacks so the marketplace remains usable while external services are not configured.
+- Completed demo orders generate a watermarked PDF locally with `pdf-lib`; production checkout can replace the demo handoff.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Browse, search, and filter 18 Nigerian education resources.
+- Open accessible product details, add a resource to the bag, and complete a demo checkout handoff.
+- Generate a buyer-specific watermarked PDF download after checkout.
+- Review seller earnings, available payouts, product uploads, marketing actions, and admin marketplace KPIs.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Use Nigerian naira, Nigerian education terminology, and realistic local seller names.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- The frontend Vite build requires workflow-provided `PORT` and `BASE_PATH`; use the managed web workflow or set both explicitly for a shell build.
+- Supabase and Paystack keys were not provided, so the current app makes the production integration points explicit and runs safely in demo mode.
 
 ## Pointers
 
