@@ -1,0 +1,63 @@
+Build PAN-AFRICAN Past Question Vault - Final Version - Owner Moses Nduka - WhatsApp 2348136377571 - ndukamoses@gmail.com
+
+Keep all previous Nigeria + Ghana + Ivory Coast + Benin + Gambia + Sierra Leone + Liberia categories and ADD East & Central Africa:
+
+TOP BAR: Pan-Africa Country Selector with flags:
+🇳🇬 Nigeria | 🇬🇭 Ghana | 🇨🇮 Ivory Coast | 🇧🇯 Benin | 🇬🇲 Gambia | 🇸🇱 Sierra Leone | 🇱🇷 Liberia | 🇸🇳 Senegal | 🇰🇪 Kenya | 🇺🇬 Uganda | 🇹🇿 Tanzania | 🇷🇼 Rwanda | 🇨🇲 Cameroon | All Africa
+
+NEW REGIONS:
+
+1. EAST AFRICA:
+🇰🇪 KENYA:
+- KCSE Past Q&A (2010-2026) All Subjects, KCPE, KMTC, KDF Recruitment, Kenya Police, KCB, TSC
+- Add Kiswahili + English toggle
+🇺🇬 UGANDA:
+- UCE, UACE Past Q&A, UNEB PLE, Makerere Post UTME, UPDF Recruitment
+🇹🇿 TANZANIA:
+- CSEE, ACSEE Past Q&A
+🇷🇼 RWANDA:
+- A-Level, O-Level Past Q&A
+
+2. CENTRAL AFRICA:
+🇨🇲 CAMEROON (English + French):
+- BAC Cameroon, BEPC, GCE O/A Level Cameroon
+
+3. SOUTHERN AFRICA (For future):
+🇿🇦 South Africa Matric Past Q&A (Placeholder)
+
+STRUCTURE EVERY PRODUCT MUST HAVE:
+- Country Flag
+- Exam Board Badge (e.g. WAEC, JAMB, KCSE, UCE, BAC, NDA, NNPC, Police Academy)
+- Year (2010-2026)
+- Subject
+- Language (English, French, Swahili)
+- Q&A Count (e.g. 500 Q&A + Answers)
+- File Type (PDF + CBT Software)
+- Seller: LessonMart Official (Moses Nduka) = Verified Blue Tick
+
+UPDATE DATABASE & UPLOAD FORM:
+- Country (14 countries)
+- Region (West Africa, East Africa, Central, Southern)
+- Exam Board (50+ options: WAEC, WASSCE Ghana, BAC Ivoirien, BAC Benin, BECE Ghana, KCSE Kenya, UCE Uganda, NDA, NNPC, Police Academy, Army, Navy, Air Force, Civil Defence, Immigration, EFCC, NDLEA, FIRS, TRCN, NABTEB, NAPTECH, JAMB, Post UTME, etc.)
+- Language (English, French, Kiswahili)
+- Year, Subject, Price
+
+HOMEPAGE SECTIONS:
+1. Hero: "Africa's Largest Past Question Vault - From Lagos to Nairobi" - Show stats: 5000+ Past Q, 14 Countries, 50+ Exam Bodies
+2. Search by: Country, Exam, Year
+3. Trending: WAEC Nigeria, WASSCE Ghana, KCSE Kenya, NDA Nigeria, NNPC, Police Academy, BAC Cote d'Ivoire, UCE Uganda
+4. Browse by Category: School, University Entrance, Military/Police, Jobs/Agency, Professional
+5. Browse by Country with flags and counts
+
+ADD 30 NEW DEMO PRODUCTS across Africa:
+- Nigeria: WAEC 2024 Maths Solved, JAMB 2025 Pack, NNPC Aptitude 2023, NDA 2024, Police Academy 2024, EFCC Past Q
+- Ghana: WASSCE Ghana Maths 2024, Ghana Police Recruitment, BECE 2023
+- Ivory Coast: BAC Cote d'Ivoire D 2024, INFAS Concours
+- Benin: BAC Benin 2024, Douane Benin Concours
+- Gambia: WASSCE Gambia 2023
+- Kenya: KCSE Mathematics 2024, Kenya Defence Force Recruitment Past Q
+- Uganda: UCE Past Q&A 2024, UPDF Recruitment
+
+Keep brand green #0D7A5F, yellow badges, WhatsApp floating 2348136377571, email ndukamoses@gmail.com, footer "Pan-African Owned by Moses Nduka | Lagos, Nigeria | WhatsApp 08136377571 | Support: ndukamoses@gmail.com"
+
+After build, show preview.
