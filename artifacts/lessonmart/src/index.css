@@ -71,6 +71,29 @@
   --accent-foreground: 21 48% 16%;
 }
 
+.field {
+  display: block;
+  width: 100%;
+  margin-top: .5rem;
+  min-height: 3rem;
+  border: 1px solid hsl(var(--input));
+  border-radius: .75rem;
+  background-color: hsl(var(--background));
+  padding: .75rem 1rem;
+  color: hsl(var(--foreground));
+  outline: none;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.field:focus {
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 3px hsl(var(--ring) / .16);
+}
+
+.field::placeholder {
+  color: hsl(var(--muted-foreground) / .8);
+}
+
 @layer base {
   * { @apply border-border; }
   html { scroll-behavior: smooth; }

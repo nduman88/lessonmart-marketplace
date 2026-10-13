@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Route, Switch, useLocation } from 'wouter';
 import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
 import {
@@ -39,25 +39,29 @@ import {
 } from 'lucide-react';
 import {
   getGetAdminOverviewQueryKey,
-  getGetMarketplaceSummaryQueryKey,
-  getGetProductQueryKey,
-  getGetSellerOverviewQueryKey,
-  getHealthCheckQueryKey,
-  getListProductsQueryKey,
-  useCreateOrder,
-  useCreateSellerProduct,
   useGetAdminOverview,
-  useGetMarketplaceSummary,
-  useGetProduct,
-  useGetSellerOverview,
-  useHealthCheck,
-  useListProducts,
   type Product,
   type SellerProductInput,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { AuthProvider, useAuth } from '@/hooks/use-auth';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import {
+  createPendingOrder,
+  createPayoutRequest,
+  createSellerProduct,
+  getAdminDashboard,
+  getMarketplaceSummary,
+  getSellerDashboard,
+  listMarketplaceProducts,
+  listPendingPayouts,
+  listPendingProducts,
+  setPayoutStatus,
+  setProductReviewStatus,
+  type ProductRecord,
+} from '@/lib/supabase-marketplace';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient();
@@ -227,7 +231,7 @@ function Brand() {
 function Shell({ children, cartCount, onCart }: { children: ReactNode; cartCount: number; onCart: () => void }) {
   const [location] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const { data: health } = useHealthCheck({ query: { retry: false, queryKey: getHealthCheckQueryKey() } });
+  const { user } = useAuth();
   const onMarketplace = location === '/';
   return (
     <div className="noise app-shell">
@@ -241,10 +245,11 @@ function Shell({ children, cartCount, onCart }: { children: ReactNode; cartCount
             <Link href="/contact" className={location === '/contact' ? 'text-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))] transition-colors hover:text-[hsl(var(--foreground))]'} data-testid="link-contact">Contact</Link>
           </nav>
           <div className="flex items-center gap-2">
-            <span className="hidden items-center gap-2 rounded-full bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-semibold text-[hsl(var(--secondary-foreground))] lg:flex" title={health ? 'Marketplace services online' : 'Demo mode'}>
-              <span className={`h-2 w-2 rounded-full ${health ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--accent))]'}`} />
+            <span className="hidden items-center gap-2 rounded-full bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-semibold text-[hsl(var(--secondary-foreground))] lg:flex" title={isSupabaseConfigured ? 'Supabase credentials configured' : 'Demo mode'}>
+              <span className={`h-2 w-2 rounded-full ${isSupabaseConfigured ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--accent))]'}`} />
               Lagos · NGN
             </span>
+            <Link href="/account" className="hidden rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs font-bold md:inline-flex" data-testid="link-account">{user?.email ?? 'Sign in'}</Link>
             {onMarketplace && <button onClick={onCart} className="relative grid h-10 w-10 place-items-center rounded-xl border border-[hsl(var(--border))] text-[hsl(var(--foreground))] transition hover:bg-[hsl(var(--secondary))]" data-testid="button-open-cart" aria-label="Open cart">
               <ShoppingBag size={18} />
               {cartCount > 0 && <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[hsl(var(--accent))] px-1 text-[10px] font-extrabold text-[hsl(var(--accent-foreground))]" data-testid="text-cart-count">{cartCount}</span>}
@@ -260,6 +265,7 @@ function Shell({ children, cartCount, onCart }: { children: ReactNode; cartCount
             <Link href="/seller" onClick={() => setMenuOpen(false)} data-testid="link-mobile-sell">Sell on LessonMart</Link>
             <Link href="/admin" onClick={() => setMenuOpen(false)} data-testid="link-mobile-admin">Admin</Link>
             <Link href="/contact" onClick={() => setMenuOpen(false)} data-testid="link-mobile-contact">Contact</Link>
+            <Link href="/account" onClick={() => setMenuOpen(false)} data-testid="link-mobile-account">{user?.email ?? 'Sign in'}</Link>
           </div>
         </nav>}
       </header>
@@ -329,9 +335,8 @@ function ProductCard({ product, onOpen, onAdd, added }: { product: Product; onOp
 }
 
 function ProductModal({ product, onClose, onAdd, added }: { product: Product | null; onClose: () => void; onAdd: (product: Product) => void; added: boolean }) {
-  const { data: fetched } = useGetProduct(product?.id ?? '', { query: { enabled: Boolean(product), queryKey: getGetProductQueryKey(product?.id ?? '') } });
   if (!product) return null;
-  const detail = fetched ?? product;
+  const detail = product;
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[hsl(var(--foreground)/.55)] p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-labelledby="product-modal-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} data-testid="dialog-product-detail">
     <div className="max-h-[92dvh] w-full max-w-4xl overflow-auto rounded-t-[1.5rem] bg-[hsl(var(--card))] shadow-2xl sm:rounded-[1.5rem]">
       <div className="grid md:grid-cols-[.85fr_1.15fr]">
@@ -359,15 +364,14 @@ function ProductModal({ product, onClose, onAdd, added }: { product: Product | n
   </div>;
 }
 
-function CheckoutModal({ product, onClose, onComplete, loading }: { product: Product | null; onClose: () => void; onComplete: (email: string) => void; loading: boolean }) {
-  const [email, setEmail] = useState('');
+function CheckoutModal({ product, buyerEmail, onClose, onComplete, loading }: { product: Product | null; buyerEmail: string; onClose: () => void; onComplete: () => void; loading: boolean }) {
   if (!product) return null;
-  const submit = (event: FormEvent) => { event.preventDefault(); if (email) onComplete(email); };
+  const submit = (event: FormEvent) => { event.preventDefault(); onComplete(); };
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[hsl(var(--foreground)/.55)] p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-labelledby="checkout-title" data-testid="dialog-checkout">
     <div className="w-full max-w-lg rounded-t-[1.5rem] bg-[hsl(var(--card))] p-6 shadow-2xl sm:rounded-[1.5rem] sm:p-9">
       <div className="flex items-start justify-between"><div><span className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Secure handoff</span><h2 id="checkout-title" className="mt-2 font-display text-3xl font-bold">One step from ready.</h2></div><button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full border border-[hsl(var(--border))]" aria-label="Close checkout" data-testid="button-close-checkout"><X size={17} /></button></div>
       <div className="mt-7 flex items-center gap-4 rounded-xl bg-[hsl(var(--secondary))] p-3"><div className="h-14 w-14 rounded-lg" style={{ backgroundColor: product.coverColor }} /><div className="min-w-0"><p className="truncate font-semibold">{product.title}</p><p className="mt-1 font-mono text-sm">{naira(product.price)}</p></div></div>
-      <form onSubmit={submit} className="mt-7 space-y-5"><label className="block text-sm font-bold">Email for your download<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" className="mt-2 w-full rounded-xl border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-4 py-3.5 outline-none transition focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--ring)/.2)]" data-testid="input-buyer-email" /></label><div className="rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--muted-foreground))]"><CreditCard size={17} className="mb-2 text-[hsl(var(--primary))]" /> Paystack receipts and download updates use the email above. Need help? <a className="font-bold text-[hsl(var(--primary))] hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> or <a className="font-bold text-[hsl(var(--primary))] hover:underline" href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer">WhatsApp support</a>. Demo mode simulates the handoff.</div><button disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--accent))] py-3.5 font-extrabold text-[hsl(var(--accent-foreground))] hover:brightness-105 disabled:opacity-60" data-testid="button-pay-now">{loading ? <><LoaderCircle size={17} className="spin" /> Preparing...</> : <>Continue to Paystack <ArrowRight size={17} /></>}</button></form>
+      <form onSubmit={submit} className="mt-7 space-y-5"><div className="rounded-xl bg-[hsl(var(--secondary))] p-4 text-sm"><span className="block text-xs text-[hsl(var(--muted-foreground))]">Order account</span><strong className="mt-1 block break-all">{buyerEmail || 'Sign in to create an order'}</strong></div><div className="rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--muted-foreground))]"><CreditCard size={17} className="mb-2 text-[hsl(var(--primary))]" /> This will create a real pending order under your account. Paystack is not connected yet, so no charge or paid download will be issued. Need help? <a className="font-bold text-[hsl(var(--primary))] hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> or <a className="font-bold text-[hsl(var(--primary))] hover:underline" href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer">WhatsApp support</a>.</div><button disabled={loading || (!buyerEmail && isSupabaseConfigured)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--accent))] py-3.5 font-extrabold text-[hsl(var(--accent-foreground))] hover:brightness-105 disabled:opacity-60" data-testid="button-pay-now">{loading ? <><LoaderCircle size={17} className="spin" /> Creating order...</> : <>Create pending order <ArrowRight size={17} /></>}</button></form>
     </div>
   </div>;
 }
@@ -384,49 +388,76 @@ function CartSheet({ product, onClose, onCheckout, onRemove }: { product: Produc
 }
 
 function Marketplace() {
-  const { data: apiProducts, isLoading, isError } = useListProducts({ limit: 50 }, { query: { retry: false, queryKey: getListProductsQueryKey({ limit: 50 }) } });
-  const { data: apiSummary } = useGetMarketplaceSummary({ query: { retry: false, queryKey: getGetMarketplaceSummaryQueryKey() } });
-  const products = apiProducts?.length ? apiProducts : demoProducts;
-  const summary = apiSummary ?? demoSummary;
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const productsQuery = useQuery({ queryKey: ['supabase', 'marketplace-products'], queryFn: listMarketplaceProducts, enabled: isSupabaseConfigured, retry: false });
+  const summaryQuery = useQuery({ queryKey: ['supabase', 'marketplace-summary'], queryFn: getMarketplaceSummary, enabled: isSupabaseConfigured, retry: false });
+  const products: Product[] = isSupabaseConfigured ? productsQuery.data ?? [] : demoProducts;
+  const summary = summaryQuery.data ?? (isSupabaseConfigured ? { notes: 0, sellers: 0, paid: 0, buyersToday: 0 } : demoSummary);
+  const statsReady = !isSupabaseConfigured || (!summaryQuery.isLoading && !summaryQuery.isError);
+  const publicStats = [
+    ['Notes & resources', statsReady ? compact(summary.notes) : '—'],
+    ['Independent sellers', statsReady ? compact(summary.sellers) : '—'],
+    ['Paid out so far', statsReady ? compactNaira(summary.paid) : '—'],
+    ['Buyers today', statsReady ? compact(summary.buyersToday) : '—'],
+  ];
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All resources');
   const [selected, setSelected] = useState<Product | null>(null);
   const [cart, setCart] = useState<Product | null>(null);
   const [checkout, setCheckout] = useState<Product | null>(null);
   const { notice, notify } = useDemoNotice();
-  const order = useCreateOrder();
+  const order = useMutation({ mutationFn: createPendingOrder });
   const filtered = useMemo(() => products.filter((product) => {
     const matchesSearch = `${product.title} ${product.subject} ${product.category} ${product.classLevel}`.toLowerCase().includes(search.toLowerCase());
     return matchesSearch && (category === 'All resources' || product.category === category);
   }), [products, search, category]);
   const addToCart = (product: Product) => { setCart(product); notify(`${product.title} added to your bag`); };
-  const completeOrder = (email: string) => {
+  const completeOrder = () => {
     if (!checkout) return;
-    order.mutate({ data: { productId: checkout.id, buyerEmail: email, paymentReference: 'demo-paystack-reference' } }, {
-      onSuccess: () => { void downloadLicensedPdf(checkout, email); setCheckout(null); setCart(null); notify(`Demo payment complete — receipt and watermarked download are ready for ${email}. Support: ${SUPPORT_EMAIL}`); },
-      onError: () => { void downloadLicensedPdf(checkout, email); setCheckout(null); setCart(null); notify(`Demo download ready — Paystack is not configured, so no charge was made. Support: ${SUPPORT_EMAIL}`); },
+    if (!user) {
+      setCheckout(null);
+      setLocation('/account');
+      notify('Sign in to create an order under your account.');
+      return;
+    }
+    if (!isSupabaseConfigured) {
+      void downloadLicensedPdf(checkout, user.email ?? SUPPORT_EMAIL);
+      setCheckout(null);
+      setCart(null);
+      notify('Demo download only — no payment was collected.');
+      return;
+    }
+    order.mutate(checkout.id, {
+      onSuccess: () => {
+        setCheckout(null);
+        setCart(null);
+        notify('Pending order saved. Paystack is not connected, so no charge or paid download was issued.');
+      },
+      onError: (error) => notify(`Could not create order: ${error.message}`),
     });
   };
   return <Shell cartCount={cart ? 1 : 0} onCart={() => setCart(cart ?? products[0])}>
     <main>
+      {isSupabaseConfigured && (productsQuery.isError || summaryQuery.isError) && <div className="mx-auto max-w-[1240px] px-5 pt-6 lg:px-8"><div className="rounded-xl border border-[hsl(var(--accent)/.5)] bg-[hsl(var(--accent)/.12)] px-4 py-3 text-sm" role="status">Supabase credentials are configured, but the LessonMart schema is not available yet. Run <span className="font-mono text-xs">artifacts/lessonmart/supabase/migrations/20261013_lessonmart_core.sql</span> in your Supabase SQL Editor to enable live listings, account profiles and private uploads.</div></div>}
       <section className="mx-auto max-w-[1240px] px-5 pb-14 pt-12 lg:px-8 lg:pb-20 lg:pt-20">
         <div className="grid items-end gap-10 lg:grid-cols-[1.1fr_.9fr]">
           <div className="fade-up"><div className="mb-6 flex items-center gap-2 text-sm font-bold text-[hsl(var(--primary))]"><span className="h-2 w-2 rounded-full bg-[hsl(var(--accent))]" /> Built for the Nigerian classroom</div><h1 className="max-w-3xl font-display text-[3.35rem] font-bold leading-[.98] tracking-[-.06em] sm:text-6xl lg:text-[5.7rem]">Good teaching<br /><span className="text-[hsl(var(--primary))]">should pay off.</span></h1><p className="mt-7 max-w-xl text-lg leading-8 text-[hsl(var(--muted-foreground))]">Find the lesson notes, WAEC drills and classroom resources that make tomorrow easier — or turn your hard-won classroom knowledge into income.</p><div className="mt-8 flex flex-wrap gap-3"><a href="#catalog" className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-5 py-3.5 text-sm font-bold text-[hsl(var(--primary-foreground))] hover:brightness-110" data-testid="link-browse-catalog">Browse the shelf <ArrowDownIcon /></a><Link href="/seller" className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-5 py-3.5 text-sm font-bold hover:bg-[hsl(var(--secondary))]" data-testid="link-start-selling">Start selling <ArrowRight size={16} /></Link></div></div>
-          <div className="relative hidden min-h-[330px] lg:block fade-up-2"><div className="absolute right-2 top-4 h-64 w-64 rounded-full bg-[hsl(var(--accent)/.55)] blur-3xl" /><div className="absolute right-10 top-10 w-80 rotate-[-7deg] rounded-[1.5rem] border border-white/30 bg-[hsl(var(--primary))] p-6 text-[hsl(var(--primary-foreground))] shadow-2xl"><div className="flex justify-between text-xs font-bold uppercase tracking-[.2em] text-white/70"><span>Teacher income</span><TrendingUp size={17} /></div><p className="mt-12 font-display text-5xl font-bold">₦486k</p><p className="mt-2 text-sm text-white/70">earned by sellers this month</p><div className="mt-8 h-2 rounded-full bg-white/20"><div className="h-2 w-4/5 rounded-full bg-[hsl(var(--accent))]" /></div></div><div className="absolute bottom-3 left-10 w-64 rotate-[8deg] rounded-[1.25rem] bg-[hsl(var(--card))] p-5 shadow-xl"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-full bg-[hsl(var(--accent))] text-xs font-bold">CO</span><div><p className="text-sm font-bold">Chinonso just sold</p><p className="text-xs text-[hsl(var(--muted-foreground))]">Chemistry Drill Pack</p></div><Check size={16} className="ml-auto text-[hsl(var(--primary))]" /></div></div></div>
+          <div className="relative hidden min-h-[330px] lg:block fade-up-2"><div className="absolute right-2 top-4 h-64 w-64 rounded-full bg-[hsl(var(--accent)/.55)] blur-3xl" /><div className="absolute right-10 top-10 w-80 rotate-[-7deg] rounded-[1.5rem] border border-white/30 bg-[hsl(var(--primary))] p-6 text-[hsl(var(--primary-foreground))] shadow-2xl"><div className="flex justify-between text-xs font-bold uppercase tracking-[.2em] text-white/70"><span>Seller desk</span><TrendingUp size={17} /></div><p className="mt-12 font-display text-4xl font-bold">Your lessons</p><p className="mt-2 text-sm text-white/70">On a shelf students can find</p><div className="mt-8 h-2 rounded-full bg-white/20"><div className="h-2 w-4/5 rounded-full bg-[hsl(var(--accent))]" /></div></div><div className="absolute bottom-3 left-10 w-64 rotate-[8deg] rounded-[1.25rem] bg-[hsl(var(--card))] p-5 shadow-xl"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-full bg-[hsl(var(--accent))] text-xs font-bold">MN</span><div><p className="text-sm font-bold">Moses Nduka</p><p className="text-xs text-[hsl(var(--muted-foreground))]">Founder · Verified Owner</p></div><BadgeCheck size={16} className="ml-auto text-[hsl(var(--primary))]" /></div></div></div>
         </div>
-        <div className="mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--border))] sm:grid-cols-4 fade-up-3">{[['Notes & resources', compact(summary.notes)], ['Independent sellers', compact(summary.sellers)], ['Paid out so far', compactNaira(summary.paid)], ['Buyers today', compact(summary.buyersToday)]].map(([label, value]) => <div className="bg-[hsl(var(--card))] px-4 py-5 sm:px-6" key={label}><p className="font-display text-2xl font-bold sm:text-3xl">{value}</p><p className="mt-1 text-xs font-semibold text-[hsl(var(--muted-foreground))]">{label}</p></div>)}</div>
+        <div className="mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--border))] sm:grid-cols-4 fade-up-3">{publicStats.map(([label, value]) => <div className="bg-[hsl(var(--card))] px-4 py-5 sm:px-6" key={label}><p className="font-display text-2xl font-bold sm:text-3xl">{value}</p><p className="mt-1 text-xs font-semibold text-[hsl(var(--muted-foreground))]">{label}</p></div>)}</div>
       </section>
       <section id="catalog" className="border-t border-[hsl(var(--border))] bg-[hsl(var(--secondary)/.4)]"><div className="mx-auto max-w-[1240px] px-5 py-14 lg:px-8 lg:py-20"><div className="flex flex-col justify-between gap-6 md:flex-row md:items-end"><div><span className="text-xs font-extrabold uppercase tracking-[.2em] text-[hsl(var(--primary))]">The shelf</span><h2 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl">Resources with receipts.</h2><p className="mt-2 text-[hsl(var(--muted-foreground))]">Made in real classrooms. Ready for your next lesson or exam.</p></div><div className="flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]"><span className="h-2 w-2 rounded-full bg-[hsl(var(--primary))]" /> Updated daily by Nigerian educators</div></div>
         <div className="mt-9 flex flex-col gap-3 lg:flex-row"><label className="relative flex-1"><Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search WAEC, JSS2 maths, scheme of work..." className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-3.5 pl-11 pr-4 outline-none focus:border-[hsl(var(--primary))]" data-testid="input-search-products" /></label><div className="flex gap-2 overflow-auto pb-1">{['All resources', 'Lesson Notes', 'Exam Prep', 'CBT Practice', 'Classroom Resources'].map((item) => <button key={item} onClick={() => setCategory(item)} className={`whitespace-nowrap rounded-xl px-4 py-3 text-sm font-bold transition ${category === item ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]' : 'border border-[hsl(var(--border))] bg-[hsl(var(--card))] hover:bg-[hsl(var(--secondary))]'}`} data-testid={`button-filter-${item.toLowerCase().replaceAll(' ', '-')}`}><Filter size={14} className="mr-2 inline" />{item}</button>)}</div></div>
-        {isLoading && !apiProducts ? <div className="mt-9 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3].map((item) => <div className="h-[390px] animate-pulse rounded-2xl bg-[hsl(var(--muted))]" key={item} />)}</div> : filtered.length ? <div className="mt-9 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{filtered.map((product) => <ProductCard key={product.id} product={product} onOpen={setSelected} onAdd={addToCart} added={cart?.id === product.id} />)}</div> : <div className="mt-9 rounded-2xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--card))] px-6 py-16 text-center"><PackageOpen className="mx-auto text-[hsl(var(--primary))]" size={32} /><h3 className="mt-4 font-display text-xl font-bold">No resources on this shelf yet.</h3><p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">Try a different subject or clear the search.</p><button onClick={() => { setSearch(''); setCategory('All resources'); }} className="mt-5 rounded-xl bg-[hsl(var(--primary))] px-4 py-2.5 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-clear-filters">Clear filters</button></div>}
-        {isError && <p className="mt-5 text-xs text-[hsl(var(--muted-foreground))]" data-testid="status-demo-mode">Showing the LessonMart demo shelf while the marketplace API reconnects.</p>}
+        {productsQuery.isLoading && isSupabaseConfigured ? <div className="mt-9 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3].map((item) => <div className="h-[390px] animate-pulse rounded-2xl bg-[hsl(var(--muted))]" key={item} />)}</div> : productsQuery.isError && isSupabaseConfigured ? <div className="mt-9 rounded-2xl border border-dashed border-[hsl(var(--destructive)/.4)] bg-[hsl(var(--card))] px-6 py-12 text-center"><PackageOpen className="mx-auto text-[hsl(var(--destructive))]" size={32} /><h3 className="mt-4 font-display text-xl font-bold">Supabase setup is not ready yet.</h3><p className="mx-auto mt-2 max-w-xl text-sm text-[hsl(var(--muted-foreground))]">{productsQuery.error.message}. Apply the LessonMart migration in the Supabase SQL Editor to create the tables and private file bucket.</p></div> : filtered.length ? <div className="mt-9 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{filtered.map((product) => <ProductCard key={product.id} product={product} onOpen={setSelected} onAdd={addToCart} added={cart?.id === product.id} />)}</div> : <div className="mt-9 rounded-2xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--card))] px-6 py-16 text-center"><PackageOpen className="mx-auto text-[hsl(var(--primary))]" size={32} /><h3 className="mt-4 font-display text-xl font-bold">No resources on this shelf yet.</h3><p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">Try a different subject or clear the search.</p><button onClick={() => { setSearch(''); setCategory('All resources'); }} className="mt-5 rounded-xl bg-[hsl(var(--primary))] px-4 py-2.5 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-clear-filters">Clear filters</button></div>}
+        {!isSupabaseConfigured && <p className="mt-5 text-xs text-[hsl(var(--muted-foreground))]" data-testid="status-demo-mode">Showing the local demo shelf because Supabase credentials are not configured.</p>}
       </div></section>
       <section className="mx-auto max-w-[1240px] px-5 pb-4 lg:px-8"><div className="grid gap-5 rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:p-8"><span className="grid h-16 w-16 place-items-center rounded-2xl bg-[hsl(var(--accent))] font-display text-xl font-bold text-[hsl(var(--accent-foreground))]">{featuredSeller.initials}</span><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Featured seller</p><h2 className="mt-1 font-display text-2xl font-bold">{featuredSeller.name}</h2><p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">{featuredSeller.role} · <span className="font-bold text-[hsl(var(--primary))]">{featuredSeller.badge}</span></p></div><a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-[hsl(var(--border))] px-4 py-3 text-sm font-bold hover:bg-[hsl(var(--secondary))]" data-testid="link-featured-seller-contact"><MessageCircle size={17} /> Contact Moses</a></div></section>
       <section className="mx-auto max-w-[1240px] px-5 py-16 lg:px-8 lg:py-24"><div className="grid items-center gap-10 rounded-[1.5rem] bg-[hsl(var(--primary))] p-7 text-[hsl(var(--primary-foreground))] sm:p-12 lg:grid-cols-[1.2fr_.8fr]"><div><span className="text-xs font-extrabold uppercase tracking-[.2em] text-[hsl(var(--accent))]">For teachers with a folder full of gold</span><h2 className="mt-4 max-w-xl font-display text-4xl font-bold leading-tight sm:text-5xl">Your best lesson should not disappear after Friday.</h2><p className="mt-5 max-w-lg leading-7 text-white/70">Package what already works, set your price, and get paid when another teacher or student finds it useful.</p><Link href="/seller" className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[hsl(var(--accent))] px-5 py-3.5 text-sm font-extrabold text-[hsl(var(--accent-foreground))]" data-testid="link-sell-banner">See the seller desk <ArrowRight size={17} /></Link></div><div className="grid grid-cols-2 gap-3"><div className="rounded-2xl bg-white/10 p-5"><Upload size={21} className="text-[hsl(var(--accent))]" /><p className="mt-10 font-display text-2xl font-bold">12 min</p><p className="mt-1 text-xs text-white/65">to list a resource</p></div><div className="mt-8 rounded-2xl bg-white/10 p-5"><Wallet size={21} className="text-[hsl(var(--accent))]" /><p className="mt-10 font-display text-2xl font-bold">₦0</p><p className="mt-1 text-xs text-white/65">to open your shelf</p></div></div></div></section>
     </main>
     <ProductModal product={selected} onClose={() => setSelected(null)} onAdd={addToCart} added={cart?.id === selected?.id} />
     <CartSheet product={cart} onClose={() => setCart(null)} onCheckout={(product) => { setCheckout(product); }} onRemove={() => setCart(null)} />
-    <CheckoutModal product={checkout} onClose={() => setCheckout(null)} onComplete={completeOrder} loading={order.isPending} />
+    <CheckoutModal product={checkout} buyerEmail={user?.email ?? ''} onClose={() => setCheckout(null)} onComplete={completeOrder} loading={order.isPending} />
     <Notice message={notice} />
   </Shell>;
 }
@@ -443,25 +474,46 @@ function DashboardFrame({ title, eyebrow, children, nav, onAction }: { title: st
 }
 
 function Seller() {
-  const { data: apiSeller, isLoading } = useGetSellerOverview({ query: { retry: false, queryKey: getGetSellerOverviewQueryKey() } });
-  const seller = apiSeller ?? demoSeller;
-  const createProduct = useCreateSellerProduct();
+  const { user, profile } = useAuth();
+  const sellerQuery = useQuery({ queryKey: ['supabase', 'seller-dashboard', user?.id], queryFn: () => getSellerDashboard(user!.id), enabled: Boolean(user), retry: false });
+  const seller = sellerQuery.data?.overview ?? { totalEarnings: 0, availablePayout: 0, totalSales: 0, views: 0, pendingProducts: 0 };
+  const products = sellerQuery.data?.products ?? [];
   const client = useQueryClient();
   const { notice, notify } = useDemoNotice();
   const [tab, setTab] = useState('Overview');
   const [showForm, setShowForm] = useState(false);
   const [showPayout, setShowPayout] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [savingProduct, setSavingProduct] = useState(false);
   const [form, setForm] = useState<SellerProductInput>({ title: '', description: '', category: 'Lesson Notes', subject: 'Mathematics', classLevel: 'SS2', price: 2500 });
-  const submitProduct = (event: FormEvent) => { event.preventDefault(); createProduct.mutate({ data: form }, { onSuccess: () => { setShowForm(false); notify('Your resource is queued for approval.'); client.invalidateQueries({ queryKey: getGetSellerOverviewQueryKey() }); }, onError: () => { setShowForm(false); notify('Demo mode: resource saved locally and queued for approval.'); } }); };
-  const action = (label: string) => { setTab(label); if (label === 'Upload product') setShowForm(true); else if (label === 'Payouts') setShowPayout(true); else if (label === 'Marketing tools') notify('Share kit copied — your product link is ready to post.'); };
-  return <><DashboardFrame title={tab === 'Overview' ? 'Good morning, teacher.' : tab} eyebrow="Seller desk" nav={[{ label: 'Overview', icon: LayoutDashboard, active: tab === 'Overview' }, { label: 'Products', icon: PackageOpen, active: tab === 'Products' }, { label: 'Upload product', icon: Upload }, { label: 'Marketing tools', icon: Share2 }, { label: 'Payouts', icon: Wallet }]} onAction={action}>
-    {isLoading ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map((item) => <div className="h-36 animate-pulse rounded-2xl bg-[hsl(var(--muted))]" key={item} />)}</div> : <><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total earnings" value={naira(seller.totalEarnings)} detail="+18.4% from last month" icon={TrendingUp} accent /><MetricCard label="Available to withdraw" value={naira(seller.availablePayout)} detail="Settled and ready" icon={Wallet} /><MetricCard label="Resource sales" value={seller.totalSales.toLocaleString()} detail="Across 12 products" icon={ShoppingBag} /><MetricCard label="Shelf views" value={compact(seller.views)} detail="+1,240 this week" icon={BarChart3} /></div><div className="mt-7 grid gap-7 xl:grid-cols-[1.2fr_.8fr]"><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Your shelf</p><h2 className="mt-2 font-display text-2xl font-bold">Products that keep teaching.</h2></div><button onClick={() => setShowForm(true)} className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-2.5 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-upload-product"><Plus size={16} /> Add product</button></div><div className="mt-7 space-y-3">{demoProducts.slice(0, 3).map((product, index) => <div key={product.id} className="flex items-center gap-4 rounded-xl border border-[hsl(var(--border))] p-3"><div className="h-12 w-12 shrink-0 rounded-lg" style={{ backgroundColor: product.coverColor }} /><div className="min-w-0 flex-1"><p className="truncate font-bold">{product.title}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{index === 2 ? 'Draft' : `${product.sales} sales · ${naira(product.price)}`}</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider ${index === 2 ? 'bg-[hsl(var(--accent)/.2)] text-[hsl(var(--accent-foreground))]' : 'bg-[hsl(var(--secondary))] text-[hsl(var(--primary))]'}`}>{index === 2 ? 'Draft' : 'Live'}</span><button onClick={() => notify('Product editor is available in the next release.')} aria-label={`Edit ${product.title}`} className="text-[hsl(var(--muted-foreground))]" data-testid={`button-edit-product-${product.id}`}><PenLine size={16} /></button></div>)}</div><button onClick={() => setTab('Products')} className="mt-6 flex items-center gap-2 text-sm font-bold text-[hsl(var(--primary))]" data-testid="button-view-all-products">View all products <ArrowRight size={15} /></button></section><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">This month</p><h2 className="mt-2 font-display text-2xl font-bold">A useful little lift.</h2><div className="mt-8 flex h-40 items-end gap-2">{[32, 48, 42, 63, 56, 78, 69, 88, 76, 100].map((height, index) => <div key={index} className="flex-1 rounded-t-md bg-[hsl(var(--primary)/.18)]" style={{ height: `${height}%` }}><div className="h-full rounded-t-md bg-[hsl(var(--primary))]" style={{ transform: `scaleY(${index > 6 ? .72 : .42})`, transformOrigin: 'bottom' }} /></div>)}</div><div className="mt-5 flex justify-between text-xs text-[hsl(var(--muted-foreground))]"><span>1 Jun</span><span>30 Jun</span></div><div className="mt-8 rounded-xl bg-[hsl(var(--secondary))] p-4"><p className="text-sm font-bold">Next best move</p><p className="mt-1 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Add a WAEC or JAMB resource to meet the July revision rush.</p></div></section></div></>}</DashboardFrame>;
-    {showForm && <ProductForm form={form} setForm={setForm} onClose={() => setShowForm(false)} onSubmit={submitProduct} loading={createProduct.isPending} />}{showPayout && <PayoutModal amount={seller.availablePayout} onClose={() => setShowPayout(false)} onSubmit={() => { setShowPayout(false); notify(`Payout request received. We will confirm your bank details by email at ${SUPPORT_EMAIL}.`); }} />}<Notice message={notice} /></>;
+  const submitProduct = (event: FormEvent) => {
+    event.preventDefault();
+    if (!user || !profile) { notify('Your account profile is not ready. Apply the Supabase migration, then sign in again.'); return; }
+    setSavingProduct(true);
+    void createSellerProduct(form, user.id, profile.display_name, file).then(() => {
+      setShowForm(false);
+      setFile(null);
+      notify('Your product was saved and is waiting for admin approval.');
+      void client.invalidateQueries({ queryKey: ['supabase', 'seller-dashboard', user.id] });
+    }).catch((error: Error) => notify(`Product could not be submitted: ${error.message}`)).finally(() => setSavingProduct(false));
+  };
+  const action = (label: string) => { setTab(label); if (label === 'Upload product') setShowForm(true); else if (label === 'Payouts') setShowPayout(true); else if (label === 'Marketing tools') notify('Marketing links will be available after products are approved.'); };
+  const requestPayout = () => {
+    if (!user) return;
+    void createPayoutRequest(user.id, seller.availablePayout).then(() => {
+      setShowPayout(false);
+      notify(`Payout request saved for admin review. Email ${SUPPORT_EMAIL} for help; no email or bank transfer is sent from this page.`);
+      void client.invalidateQueries({ queryKey: ['supabase', 'seller-dashboard', user.id] });
+    }).catch((error: Error) => notify(`Payout request could not be saved: ${error.message}`));
+  };
+  return <><DashboardFrame title={tab === 'Overview' ? `Welcome, ${profile?.display_name ?? 'seller'}.` : tab} eyebrow="Seller desk" nav={[{ label: 'Overview', icon: LayoutDashboard, active: tab === 'Overview' }, { label: 'Products', icon: PackageOpen, active: tab === 'Products' }, { label: 'Upload product', icon: Upload }, { label: 'Marketing tools', icon: Share2 }, { label: 'Payouts', icon: Wallet }]} onAction={action}>
+    {sellerQuery.isLoading ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map((item) => <div className="h-36 animate-pulse rounded-2xl bg-[hsl(var(--muted))]" key={item} />)}</div> : sellerQuery.isError ? <div className="rounded-2xl border border-[hsl(var(--destructive)/.4)] bg-[hsl(var(--card))] p-6 text-sm" role="alert">Could not load your seller data: {sellerQuery.error.message}. Apply the LessonMart migration in Supabase and sign in again.</div> : <><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total earnings" value={naira(seller.totalEarnings)} detail="Paid orders only" icon={TrendingUp} accent /><MetricCard label="Available to withdraw" value={naira(seller.availablePayout)} detail="After existing payout requests" icon={Wallet} /><MetricCard label="Resource sales" value={seller.totalSales.toLocaleString()} detail="Paid orders" icon={ShoppingBag} /><MetricCard label="Pending review" value={seller.pendingProducts.toLocaleString()} detail="Awaiting admin approval" icon={Clock3} /></div><div className="mt-7 grid gap-7 xl:grid-cols-[1.2fr_.8fr]"><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Your shelf</p><h2 className="mt-2 font-display text-2xl font-bold">Products that keep teaching.</h2></div><button onClick={() => setShowForm(true)} className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-2.5 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-upload-product"><Plus size={16} /> Add product</button></div><div className="mt-7 space-y-3">{products.length ? products.slice(0, 5).map((product) => <div key={product.id} className="flex items-center gap-4 rounded-xl border border-[hsl(var(--border))] p-3"><div className="h-12 w-12 shrink-0 rounded-lg" style={{ backgroundColor: product.coverColor }} /><div className="min-w-0 flex-1"><p className="truncate font-bold">{product.title}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{product.sales} paid sales · {naira(product.price)}</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider ${product.status === 'approved' ? 'bg-[hsl(var(--secondary))] text-[hsl(var(--primary))]' : 'bg-[hsl(var(--accent)/.2)] text-[hsl(var(--accent-foreground))]'}`}>{product.status}</span></div>) : <p className="rounded-xl border border-dashed border-[hsl(var(--border))] p-6 text-sm text-[hsl(var(--muted-foreground))]">Your submitted products will appear here.</p>}</div></section><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Seller account</p><h2 className="mt-2 font-display text-2xl font-bold">Payouts and resources</h2><p className="mt-4 text-sm leading-6 text-[hsl(var(--muted-foreground))]">PDF uploads are private until a buyer has a paid order. Product listings go to admin review before they appear in the marketplace.</p><button onClick={() => setShowPayout(true)} disabled={seller.availablePayout <= 0} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))] disabled:cursor-not-allowed disabled:opacity-50"><Wallet size={17} /> Request available payout</button></section></div></>}</DashboardFrame>;
+    {showForm && <ProductForm form={form} setForm={setForm} file={file} setFile={setFile} onClose={() => setShowForm(false)} onSubmit={submitProduct} loading={savingProduct} />}{showPayout && <PayoutModal amount={seller.availablePayout} onClose={() => setShowPayout(false)} onSubmit={requestPayout} />}{notice && <Notice message={notice} />}</>;
 }
 
-function ProductForm({ form, setForm, onClose, onSubmit, loading }: { form: SellerProductInput; setForm: (form: SellerProductInput) => void; onClose: () => void; onSubmit: (event: FormEvent) => void; loading: boolean }) {
+function ProductForm({ form, setForm, file, setFile, onClose, onSubmit, loading }: { form: SellerProductInput; setForm: (form: SellerProductInput) => void; file: File | null; setFile: (file: File | null) => void; onClose: () => void; onSubmit: (event: FormEvent) => void; loading: boolean }) {
   const update = (key: keyof SellerProductInput, value: string) => setForm({ ...form, [key]: key === 'price' ? Number(value) : value });
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[hsl(var(--foreground)/.55)] p-0 backdrop-blur-sm sm:items-center sm:p-5"><div className="max-h-[94dvh] w-full max-w-2xl overflow-auto rounded-t-[1.5rem] bg-[hsl(var(--card))] p-6 shadow-2xl sm:rounded-[1.5rem] sm:p-9"><div className="flex justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">New resource</p><h2 className="mt-2 font-display text-3xl font-bold">Put your best work on the shelf.</h2></div><button onClick={onClose} aria-label="Close upload form" data-testid="button-close-upload"><X /></button></div><form onSubmit={onSubmit} className="mt-8 grid gap-5 sm:grid-cols-2"><label className="sm:col-span-2 text-sm font-bold">Product title<input required value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="e.g. SS2 Physics: Electricity Notes" className="field" data-testid="input-product-title" /></label><label className="sm:col-span-2 text-sm font-bold">What will buyers get?<textarea required rows={4} value={form.description} onChange={(e) => update('description', e.target.value)} placeholder="Tell students and teachers what makes this useful." className="field resize-none" data-testid="input-product-description" /></label><SelectField label="Category" value={form.category} options={['Lesson Notes', 'Exam Prep', 'CBT Practice', 'Classroom Resources']} onChange={(value) => update('category', value)} testId="select-product-category" /><label className="text-sm font-bold">Subject<input required value={form.subject} onChange={(e) => update('subject', e.target.value)} className="field" data-testid="input-product-subject" /></label><label className="text-sm font-bold">Class level<input required value={form.classLevel} onChange={(e) => update('classLevel', e.target.value)} className="field" data-testid="input-product-level" /></label><label className="text-sm font-bold">Price in naira<input required min="500" type="number" value={form.price} onChange={(e) => update('price', e.target.value)} className="field" data-testid="input-product-price" /></label><div className="sm:col-span-2 flex justify-end gap-3 border-t border-[hsl(var(--border))] pt-5"><button type="button" onClick={onClose} className="rounded-xl px-5 py-3 text-sm font-bold" data-testid="button-cancel-upload">Cancel</button><button disabled={loading} className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-5 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-submit-product">{loading && <LoaderCircle size={16} className="spin" />} Submit for review</button></div></form></div></div>;
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[hsl(var(--foreground)/.55)] p-0 backdrop-blur-sm sm:items-center sm:p-5"><div className="max-h-[94dvh] w-full max-w-2xl overflow-auto rounded-t-[1.5rem] bg-[hsl(var(--card))] p-6 shadow-2xl sm:rounded-[1.5rem] sm:p-9"><div className="flex justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">New resource</p><h2 className="mt-2 font-display text-3xl font-bold">Put your best work on the shelf.</h2></div><button onClick={onClose} aria-label="Close upload form" data-testid="button-close-upload"><X /></button></div><form onSubmit={onSubmit} className="mt-8 grid gap-5 sm:grid-cols-2"><label className="sm:col-span-2 text-sm font-bold">Product title<input required value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="e.g. SS2 Physics: Electricity Notes" className="field" data-testid="input-product-title" /></label><label className="sm:col-span-2 text-sm font-bold">What will buyers get?<textarea required rows={4} value={form.description} onChange={(e) => update('description', e.target.value)} placeholder="Tell students and teachers what makes this useful." className="field resize-none" data-testid="input-product-description" /></label><SelectField label="Category" value={form.category} options={['Lesson Notes', 'Exam Prep', 'CBT Practice', 'Classroom Resources']} onChange={(value) => update('category', value)} testId="select-product-category" /><label className="text-sm font-bold">Subject<input required value={form.subject} onChange={(e) => update('subject', e.target.value)} className="field" data-testid="input-product-subject" /></label><label className="text-sm font-bold">Class level<input required value={form.classLevel} onChange={(e) => update('classLevel', e.target.value)} className="field" data-testid="input-product-level" /></label><label className="text-sm font-bold">Price in naira<input required min="500" type="number" value={form.price} onChange={(e) => update('price', e.target.value)} className="field" data-testid="input-product-price" /></label><label className="sm:col-span-2 text-sm font-bold">Resource PDF (optional)<input type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="field file:mr-3 file:rounded-lg file:border-0 file:bg-[hsl(var(--secondary))] file:px-3 file:py-2" data-testid="input-product-file" /><span className="mt-1 block text-xs font-normal text-[hsl(var(--muted-foreground))]">PDF only, up to 50 MB. Stored privately in Supabase until a buyer has a paid order.</span></label><div className="sm:col-span-2 flex justify-end gap-3 border-t border-[hsl(var(--border))] pt-5"><button type="button" onClick={onClose} className="rounded-xl px-5 py-3 text-sm font-bold" data-testid="button-cancel-upload">Cancel</button><button disabled={loading} className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-5 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-submit-product">{loading && <LoaderCircle size={16} className="spin" />} Submit for review</button></div></form></div></div>;
 }
 
 function SelectField({ label, value, options, onChange, testId }: { label: string; value: string; options: string[]; onChange: (value: string) => void; testId: string }) {
@@ -469,16 +521,145 @@ function SelectField({ label, value, options, onChange, testId }: { label: strin
 }
 
 function PayoutModal({ amount, onClose, onSubmit }: { amount: number; onClose: () => void; onSubmit: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[hsl(var(--foreground)/.55)] p-5 backdrop-blur-sm"><div className="w-full max-w-md rounded-[1.5rem] bg-[hsl(var(--card))] p-7 shadow-2xl"><div className="flex justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Payouts</p><h2 className="mt-2 font-display text-3xl font-bold">Take your work home.</h2></div><button onClick={onClose} aria-label="Close payout modal" data-testid="button-close-payout"><X /></button></div><p className="mt-5 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Request a transfer to your verified Nigerian bank account. Demo mode does not initiate a real transfer. Payout notifications go to <a className="font-bold text-[hsl(var(--primary))] hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.</p><div className="mt-6 rounded-xl bg-[hsl(var(--secondary))] p-5"><span className="text-xs text-[hsl(var(--muted-foreground))]">Available</span><p className="mt-1 font-display text-3xl font-bold">{naira(amount)}</p></div><button onClick={onSubmit} className="mt-6 w-full rounded-xl bg-[hsl(var(--accent))] py-3.5 font-extrabold text-[hsl(var(--accent-foreground))]" data-testid="button-request-payout">Request payout</button></div></div>;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[hsl(var(--foreground)/.55)] p-5 backdrop-blur-sm"><div className="w-full max-w-md rounded-[1.5rem] bg-[hsl(var(--card))] p-7 shadow-2xl"><div className="flex justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Payouts</p><h2 className="mt-2 font-display text-3xl font-bold">Take your work home.</h2></div><button onClick={onClose} aria-label="Close payout modal" data-testid="button-close-payout"><X /></button></div><p className="mt-5 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Save a payout request for admin review. This does not initiate a bank transfer or send an email notification. For help, contact <a className="font-bold text-[hsl(var(--primary))] hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.</p><div className="mt-6 rounded-xl bg-[hsl(var(--secondary))] p-5"><span className="text-xs text-[hsl(var(--muted-foreground))]">Available</span><p className="mt-1 font-display text-3xl font-bold">{naira(amount)}</p></div><button onClick={onSubmit} disabled={amount <= 0} className="mt-6 w-full rounded-xl bg-[hsl(var(--accent))] py-3.5 font-extrabold text-[hsl(var(--accent-foreground))] disabled:opacity-50" data-testid="button-request-payout">Request payout</button></div></div>;
 }
 
 function Admin() {
+  const { profile } = useAuth();
+  const client = useQueryClient();
+  const [tab, setTab] = useState('Overview');
+  const { notice, notify } = useDemoNotice();
+  const overview = useQuery({ queryKey: ['supabase', 'admin-overview'], queryFn: getAdminDashboard, retry: false });
+  const approvals = useQuery({ queryKey: ['supabase', 'admin-pending-products'], queryFn: listPendingProducts, retry: false });
+  const payouts = useQuery({ queryKey: ['supabase', 'admin-pending-payouts'], queryFn: listPendingPayouts, retry: false });
+  const invalidateAdmin = () => {
+    void client.invalidateQueries({ queryKey: ['supabase', 'admin-overview'] });
+    void client.invalidateQueries({ queryKey: ['supabase', 'admin-pending-products'] });
+    void client.invalidateQueries({ queryKey: ['supabase', 'admin-pending-payouts'] });
+  };
+  const review = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'approved' | 'rejected' }) => setProductReviewStatus(id, status),
+    onSuccess: () => { invalidateAdmin(); notify('Product review was saved.'); },
+    onError: (error) => notify(`Could not save product review: ${error.message}`),
+  });
+  const updatePayout = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'approved' | 'paid' | 'rejected' }) => setPayoutStatus(id, status),
+    onSuccess: () => { invalidateAdmin(); notify('Payout status updated. Marking paid records an external transfer; it does not send one.'); },
+    onError: (error) => notify(`Could not update payout: ${error.message}`),
+  });
+  const admin = overview.data ?? { totalRevenue: 0, commission: 0, pendingApprovals: 0, payouts: 0 };
+  const nav = [
+    { label: 'Overview', icon: LayoutDashboard, active: tab === 'Overview' },
+    { label: 'Approvals', icon: ClipboardList, active: tab === 'Approvals' },
+    { label: 'Payouts', icon: Wallet, active: tab === 'Payouts' },
+    { label: 'Revenue', icon: BarChart3, active: tab === 'Revenue' },
+  ];
+  return <><DashboardFrame title="Marketplace control room" eyebrow="Admin desk" nav={nav} onAction={setTab}>
+    <div className="mb-7 flex flex-col gap-2 rounded-2xl border border-[hsl(var(--primary)/.25)] bg-[hsl(var(--secondary))] p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Administrator</p><p className="mt-1 font-bold">{profile?.email ?? ADMIN_EMAIL}</p></div>
+      <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-extrabold text-[hsl(var(--primary-foreground))]"><BadgeCheck size={14} /> Full access</span>
+      <p className="text-xs text-[hsl(var(--muted-foreground))] sm:max-w-xs">Approve products, see paid-order revenue and manage payout requests for {BUSINESS_NAME}.</p>
+    </div>
+    {overview.isError && <p className="mb-5 rounded-xl border border-[hsl(var(--destructive)/.4)] p-4 text-sm" role="alert">Could not load admin data: {overview.error.message}. Apply the LessonMart migration in Supabase.</p>}
+    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+      <MetricCard label="Total revenue" value={naira(admin.totalRevenue)} detail="Paid orders only" icon={BarChart3} accent />
+      <MetricCard label="Commission earned" value={naira(admin.commission)} detail="Calculated on paid orders" icon={TrendingUp} />
+      <MetricCard label="Pending approvals" value={String(admin.pendingApprovals)} detail="Products awaiting review" icon={Clock3} />
+      <MetricCard label="Payout requests" value={naira(admin.payouts)} detail="Pending or approved amounts" icon={Wallet} />
+    </div>
+    <div className="mt-7 grid gap-7 xl:grid-cols-2">
+      <section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8">
+        <div className="flex items-center justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Product approval queue</p><h2 className="mt-2 font-display text-2xl font-bold">Review seller submissions.</h2></div><button onClick={() => setTab('Approvals')} className="text-sm font-bold text-[hsl(var(--primary))]">Approvals</button></div>
+        {approvals.isError && <p className="mt-5 text-sm text-[hsl(var(--destructive))]">{approvals.error.message}</p>}
+        <div className="mt-6 space-y-3">{(approvals.data ?? []).length ? (approvals.data ?? []).map((product) => <div key={product.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[hsl(var(--border))] p-3"><div className="h-11 w-11 shrink-0 rounded-lg" style={{ backgroundColor: product.coverColor }} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{product.title}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{product.seller.name} · {naira(product.price)}</p></div><button disabled={review.isPending} onClick={() => review.mutate({ id: product.id, status: 'approved' })} className="rounded-lg bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-bold text-[hsl(var(--primary))] disabled:opacity-50">Approve</button><button disabled={review.isPending} onClick={() => review.mutate({ id: product.id, status: 'rejected' })} className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-bold disabled:opacity-50">Reject</button></div>) : <p className="rounded-xl border border-dashed border-[hsl(var(--border))] p-5 text-sm text-[hsl(var(--muted-foreground))]">No products are waiting for review.</p>}</div>
+      </section>
+      <section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8">
+        <div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Payout requests</p><h2 className="mt-2 font-display text-2xl font-bold">Review seller payouts.</h2></div>
+        {payouts.isError && <p className="mt-5 text-sm text-[hsl(var(--destructive))]">{payouts.error.message}</p>}
+        <div className="mt-6 space-y-3">{(payouts.data ?? []).length ? (payouts.data ?? []).map((payout) => <div key={payout.id} className="rounded-xl border border-[hsl(var(--border))] p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-bold">{payout.seller?.display_name ?? 'Seller'}</p><p className="mt-1 break-all text-xs text-[hsl(var(--muted-foreground))]">{payout.seller?.email ?? payout.seller_id}</p></div><span className="font-display text-lg font-bold">{naira(Number(payout.amount))}</span></div><div className="mt-4 flex items-center justify-between"><span className="text-xs font-bold uppercase text-[hsl(var(--muted-foreground))]">{payout.status}</span><div className="flex gap-2">{payout.status === 'pending' && <button disabled={updatePayout.isPending} onClick={() => updatePayout.mutate({ id: payout.id, status: 'approved' })} className="rounded-lg bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-bold text-[hsl(var(--primary))]">Approve</button>}{payout.status === 'approved' && <button disabled={updatePayout.isPending} onClick={() => updatePayout.mutate({ id: payout.id, status: 'paid' })} className="rounded-lg bg-[hsl(var(--primary))] px-3 py-2 text-xs font-bold text-[hsl(var(--primary-foreground))]">Mark paid</button>}{payout.status === 'pending' && <button disabled={updatePayout.isPending} onClick={() => updatePayout.mutate({ id: payout.id, status: 'rejected' })} className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-bold">Reject</button>}</div></div></div>) : <p className="rounded-xl border border-dashed border-[hsl(var(--border))] p-5 text-sm text-[hsl(var(--muted-foreground))]">No payout requests are waiting.</p>}</div>
+      </section>
+    </div>
+    <div className="mt-7 rounded-2xl bg-[hsl(var(--secondary))] p-5 text-sm text-[hsl(var(--muted-foreground))]">Payout approval only records status. A real bank transfer must be made and confirmed separately. Paystack settlement webhooks are not configured by this Supabase setup.</div>
+  </DashboardFrame>{notice && <Notice message={notice} />}</>;
+}
+
+function LegacyAdmin() {
   const { data: apiAdmin, isLoading } = useGetAdminOverview({ query: { retry: false, queryKey: getGetAdminOverviewQueryKey() } });
   const admin = apiAdmin ?? demoAdmin;
   const { notice, notify } = useDemoNotice();
   const [tab, setTab] = useState('Overview');
   const action = (label: string) => { setTab(label); if (label !== 'Overview') notify(`${label} queue selected — demo data is ready for review.`); };
   return <><DashboardFrame title="Marketplace control room" eyebrow="Admin desk" nav={[{ label: 'Overview', icon: LayoutDashboard, active: tab === 'Overview' }, { label: 'Approvals', icon: ClipboardList }, { label: 'Payouts', icon: Wallet }, { label: 'Revenue', icon: BarChart3 }]} onAction={action}><div className="mb-7 flex flex-col gap-2 rounded-2xl border border-[hsl(var(--primary)/.25)] bg-[hsl(var(--secondary))] p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Administrator</p><p className="mt-1 font-bold">{ADMIN_EMAIL}</p></div><span className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-extrabold text-[hsl(var(--primary-foreground))]"><BadgeCheck size={14} /> Full access</span><p className="text-xs text-[hsl(var(--muted-foreground))] sm:max-w-xs">Approve products, see all revenue and manage seller payouts for {BUSINESS_NAME}.</p></div>{isLoading ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map((item) => <div className="h-36 animate-pulse rounded-2xl bg-[hsl(var(--muted))]" key={item} />)}</div> : <><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total revenue" value={naira(admin.totalRevenue)} detail="Gross marketplace volume" icon={BarChart3} accent /><MetricCard label="Commission earned" value={naira(admin.commission)} detail="15% marketplace share" icon={TrendingUp} /><MetricCard label="Pending approvals" value={admin.pendingApprovals.toString()} detail="Need a human look" icon={Clock3} /><MetricCard label="Payouts this cycle" value={naira(admin.payouts)} detail="Next run · Friday" icon={Wallet} /></div><div className="mt-7 grid gap-7 xl:grid-cols-[1.1fr_.9fr]"><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><div className="flex items-center justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Needs a look</p><h2 className="mt-2 font-display text-2xl font-bold">Keep the shelf trustworthy.</h2></div><button onClick={() => action('Approvals')} className="text-sm font-bold text-[hsl(var(--primary))]" data-testid="button-review-approvals">Review all</button></div><div className="mt-7 space-y-3">{demoProducts.slice(0, 3).map((product, index) => <div key={product.id} className="flex items-center gap-3 rounded-xl border border-[hsl(var(--border))] p-3"><div className="h-11 w-11 rounded-lg" style={{ backgroundColor: product.coverColor }} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{product.title}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{product.seller.name} · submitted {index + 1}h ago</p></div><button onClick={() => notify(`${product.title} approved for the shelf.`)} className="rounded-lg bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-bold text-[hsl(var(--primary))]" data-testid={`button-approve-${product.id}`}>Approve</button><button onClick={() => notify('Product held for a closer review.')} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))]" aria-label={`More actions for ${product.title}`} data-testid={`button-more-${product.id}`}><MoreHorizontal size={17} /></button></div>)}</div></section><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><div className="flex items-start justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Volume pulse</p><h2 className="mt-2 font-display text-2xl font-bold">The marketplace is moving.</h2></div><span className="rounded-full bg-[hsl(var(--secondary))] px-3 py-1 text-xs font-bold text-[hsl(var(--primary))]">30 days</span></div><div className="mt-8 flex h-48 items-end gap-1.5">{[28, 36, 32, 44, 42, 57, 52, 68, 64, 78, 74, 91].map((height, index) => <div key={index} className="flex-1 rounded-t-md bg-[hsl(var(--primary))]" style={{ height: `${height}%`, opacity: .32 + index / 24 }} />)}</div><div className="mt-5 grid grid-cols-3 gap-3 border-t border-[hsl(var(--border))] pt-5"><div><p className="font-display text-xl font-bold">+24%</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">GMV</p></div><div><p className="font-display text-xl font-bold">+18%</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">New sellers</p></div><div><p className="font-display text-xl font-bold">4.8</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Avg rating</p></div></div></section></div><div className="mt-7 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Operations note</p><h2 className="mt-2 font-display text-xl font-bold">The next payout run is Friday.</h2><p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">Review the pending queue before 4:00 PM to keep seller trust high.</p></div><button onClick={() => action('Payouts')} className="flex items-center justify-center gap-2 rounded-xl border border-[hsl(var(--border))] px-4 py-3 text-sm font-bold hover:bg-[hsl(var(--secondary))]" data-testid="button-open-payouts">Open payouts <ArrowRight size={16} /></button></div></div></>}</DashboardFrame><Notice message={notice} /></>;
+}
+
+function AccountPage({ redirectTo = '/account' }: { redirectTo?: string }) {
+  const { user, profile, loading, profileLoading, error, signIn, signUp, signOut } = useAuth();
+  const [, setLocation] = useLocation();
+  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [formError, setFormError] = useState('');
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setFormError('');
+    setMessage('');
+    try {
+      if (mode === 'sign-in') {
+        await signIn(email.trim(), password);
+        setLocation(redirectTo);
+      } else {
+        const hasSession = await signUp(email.trim(), password, displayName.trim());
+        if (hasSession) setLocation(redirectTo);
+        else setMessage('Account created. Check your email to confirm the address, then sign in.');
+      }
+    } catch (submitError) {
+      setFormError(submitError instanceof Error ? submitError.message : 'Could not complete the request.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <Shell cartCount={0} onCart={() => undefined}><main className="mx-auto max-w-[1240px] px-5 py-12 lg:px-8 lg:py-20">
+    <div className="mx-auto max-w-xl rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm sm:p-9">
+      {user ? <>
+        <p className="text-xs font-extrabold uppercase tracking-[.2em] text-[hsl(var(--primary))]">LessonMart account</p>
+        <h1 className="mt-3 font-display text-3xl font-bold">You’re signed in.</h1>
+        <p className="mt-3 break-all text-sm text-[hsl(var(--muted-foreground))]">{user.email}</p>
+        {profileLoading || loading ? <p className="mt-5 text-sm">Loading account permissions…</p> : profile ? <div className="mt-5 rounded-xl bg-[hsl(var(--secondary))] p-4 text-sm"><span className="text-[hsl(var(--muted-foreground))]">Access level</span><strong className="mt-1 block capitalize">{profile.role}</strong>{profile.role === 'admin' && <p className="mt-2 text-xs text-[hsl(var(--muted-foreground))]">Owner administrator access is enabled.</p>}</div> : <p className="mt-5 rounded-xl border border-[hsl(var(--destructive)/.4)] p-4 text-sm">Your profile is missing. Apply the LessonMart migration in Supabase before using seller or admin tools.{error ? ` (${error})` : ''}</p>}
+        <div className="mt-6 flex flex-wrap gap-3"><Link href="/" className="rounded-xl bg-[hsl(var(--primary))] px-4 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))]">Browse marketplace</Link><button onClick={() => void signOut().catch((signOutError: Error) => setFormError(signOutError.message))} className="rounded-xl border border-[hsl(var(--border))] px-4 py-3 text-sm font-bold">Sign out</button></div>
+        {formError && <p className="mt-4 text-sm text-[hsl(var(--destructive))]" role="alert">{formError}</p>}
+      </> : <>
+        <p className="text-xs font-extrabold uppercase tracking-[.2em] text-[hsl(var(--primary))]">{mode === 'sign-in' ? 'Welcome back' : 'Create your LessonMart account'}</p>
+        <h1 className="mt-3 font-display text-3xl font-bold">{mode === 'sign-in' ? 'Sign in to LessonMart.' : 'Start selling on LessonMart.'}</h1>
+        <p className="mt-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Use your email and password. Seller submissions and orders are saved to your Supabase account.</p>
+        {!isSupabaseConfigured ? <p className="mt-6 rounded-xl border border-[hsl(var(--destructive)/.4)] p-4 text-sm">Supabase credentials are not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Replit Secrets.</p> : <form onSubmit={submit} className="mt-7 space-y-4">
+          {mode === 'sign-up' && <label className="block text-sm font-bold">Your name<input required minLength={2} maxLength={80} value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="name" className="field" data-testid="input-account-name" /></label>}
+          <label className="block text-sm font-bold">Email<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" className="field" data-testid="input-account-email" /></label>
+          <label className="block text-sm font-bold">Password<input required minLength={8} type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'} className="field" data-testid="input-account-password" /></label>
+          {formError && <p className="text-sm text-[hsl(var(--destructive))]" role="alert">{formError}</p>}
+          {message && <p className="rounded-xl bg-[hsl(var(--secondary))] p-3 text-sm" role="status">{message}</p>}
+          <button disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-3.5 text-sm font-extrabold text-[hsl(var(--primary-foreground))] disabled:opacity-60" data-testid="button-account-submit">{saving && <LoaderCircle size={16} className="spin" />}{mode === 'sign-in' ? 'Sign in' : 'Create account'}</button>
+        </form>}
+        <button onClick={() => { setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in'); setFormError(''); setMessage(''); }} className="mt-5 text-sm font-bold text-[hsl(var(--primary))]">{mode === 'sign-in' ? 'New to LessonMart? Create an account' : 'Already have an account? Sign in'}</button>
+        {mode === 'sign-up' && <p className="mt-4 text-xs leading-5 text-[hsl(var(--muted-foreground))]">The owner account receives admin access only through the database migration and only for {ADMIN_EMAIL}. Access cannot be self-assigned from this form.</p>}
+      </>}
+    </div>
+  </main></Shell>;
+}
+
+function AccessGate({ requiredRole }: { requiredRole: 'seller' | 'admin' }) {
+  const { user, profile, loading, profileLoading, error } = useAuth();
+  const path = requiredRole === 'admin' ? '/admin' : '/seller';
+  if (loading || (user && profileLoading)) return <Shell cartCount={0} onCart={() => undefined}><main className="mx-auto max-w-2xl px-5 py-24 text-center"><LoaderCircle className="mx-auto spin text-[hsl(var(--primary))]" size={28} /><p className="mt-4">Checking your LessonMart account…</p></main></Shell>;
+  if (!user) return <AccountPage redirectTo={path} />;
+  if (!profile) return <Shell cartCount={0} onCart={() => undefined}><main className="mx-auto max-w-2xl px-5 py-24"><div className="rounded-2xl border border-[hsl(var(--destructive)/.4)] bg-[hsl(var(--card))] p-6"><h1 className="font-display text-2xl font-bold">Account setup is incomplete.</h1><p className="mt-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Your Supabase login succeeded, but its LessonMart profile is not available. Apply the migration file in the Supabase SQL Editor and sign in again.{error ? ` Details: ${error}` : ''}</p><Link href="/account" className="mt-5 inline-flex rounded-xl bg-[hsl(var(--primary))] px-4 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))]">Account settings</Link></div></main></Shell>;
+  if (requiredRole === 'admin' && profile.role !== 'admin') return <Shell cartCount={0} onCart={() => undefined}><main className="mx-auto max-w-2xl px-5 py-24"><div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6"><h1 className="font-display text-2xl font-bold">Administrator access required.</h1><p className="mt-3 text-sm text-[hsl(var(--muted-foreground))]">This account does not have the administrator role. The owner role is assigned by a protected database trigger; it cannot be enabled from the browser.</p><Link href="/" className="mt-5 inline-flex rounded-xl bg-[hsl(var(--primary))] px-4 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))]">Back to marketplace</Link></div></main></Shell>;
+  return requiredRole === 'admin' ? <Admin /> : <Seller />;
 }
 
 function Contact() {
@@ -512,8 +693,20 @@ function Contact() {
   </Shell>;
 }
 
+function SellerAccess() {
+  return <AccessGate requiredRole="seller" />;
+}
+
+function AdminAccess() {
+  return <AccessGate requiredRole="admin" />;
+}
+
+function AccountRoute() {
+  return <AccountPage />;
+}
+
 function AppRouter() {
-  return <ErrorBoundary resetKey={window.location.pathname}><Switch><Route path="/" component={Marketplace} /><Route path="/seller" component={Seller} /><Route path="/admin" component={Admin} /><Route path="/contact" component={Contact} /><Route component={NotFound} /></Switch></ErrorBoundary>;
+  return <AuthProvider><ErrorBoundary resetKey={window.location.pathname}><Switch><Route path="/" component={Marketplace} /><Route path="/seller" component={SellerAccess} /><Route path="/admin" component={AdminAccess} /><Route path="/account" component={AccountRoute} /><Route path="/contact" component={Contact} /><Route component={NotFound} /></Switch></ErrorBoundary></AuthProvider>;
 }
 
 function App() {
