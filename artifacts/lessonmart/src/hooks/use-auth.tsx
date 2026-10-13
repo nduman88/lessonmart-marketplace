@@ -5,8 +5,9 @@ import { isSupabaseConfigured, requireSupabase, supabase } from '@/lib/supabase'
 export type LessonMartProfile = {
   id: string;
   email: string;
-  display_name: string;
-  role: 'seller' | 'admin';
+  full_name: string;
+  role: 'buyer' | 'seller' | 'admin';
+  avatar_url: string | null;
 };
 
 type AuthState = {
@@ -71,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { data, error: profileError } = await supabase
           .from('profiles')
-          .select('id,email,display_name,role')
+          .select('id,email,full_name,role,avatar_url')
           .eq('id', userId)
           .maybeSingle();
         if (!active) return;

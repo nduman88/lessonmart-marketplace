@@ -1,7 +1,6 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Route, Switch, useLocation } from 'wouter';
-import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,18 +9,14 @@ import {
   BookOpen,
   BriefcaseBusiness,
   Check,
-  ChevronDown,
   ClipboardList,
   Clock3,
   CreditCard,
-  Download,
   FileText,
-  Filter,
   LayoutDashboard,
   LoaderCircle,
   Menu,
   MessageCircle,
-  MoreHorizontal,
   PackageOpen,
   PenLine,
   Plus,
@@ -29,31 +24,23 @@ import {
   Share2,
   ShoppingBag,
   Sparkles,
-  Star,
   Store,
-  Tag,
   TrendingUp,
   Upload,
   Wallet,
   X,
 } from 'lucide-react';
-import {
-  getGetAdminOverviewQueryKey,
-  useGetAdminOverview,
-  type Product,
-  type SellerProductInput,
-} from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import {
+  activateSellerAccount,
   createPendingOrder,
   createPayoutRequest,
   createSellerProduct,
   getAdminDashboard,
-  getMarketplaceSummary,
   getSellerDashboard,
   listMarketplaceProducts,
   listPendingPayouts,
@@ -61,107 +48,12 @@ import {
   setPayoutStatus,
   setProductReviewStatus,
   type ProductRecord,
+  type SellerProductInput,
 } from '@/lib/supabase-marketplace';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient();
 
-const demoProducts: Product[] = [
-  {
-    id: 'demo-chemistry-waec',
-    title: 'WAEC Chemistry: Organic Chemistry Drill Pack',
-    description: 'A teacher-tested revision pack with guided examples, marked practice and the common traps students meet in WAEC Chemistry.',
-    category: 'Exam Prep',
-    subject: 'Chemistry',
-    classLevel: 'SS3',
-    price: 3500,
-    rating: 4.9,
-    sales: 184,
-    badge: 'Top seller',
-    coverColor: '#e87955',
-    coverLabel: 'CHEM',
-    seller: { name: 'Chinonso Okeke', initials: 'CO', verified: true },
-  },
-  {
-    id: 'demo-maths-scheme',
-    title: 'JSS2 Mathematics Scheme of Work',
-    description: 'A clear, term-by-term scheme with lesson objectives, classroom activities and assessment prompts for busy maths teachers.',
-    category: 'Lesson Notes',
-    subject: 'Mathematics',
-    classLevel: 'JSS2',
-    price: 2800,
-    rating: 4.8,
-    sales: 96,
-    badge: 'Teacher pick',
-    coverColor: '#2d8b83',
-    coverLabel: 'MATH',
-    seller: { name: 'Amina Bello', initials: 'AB', verified: true },
-  },
-  {
-    id: 'demo-english-cbt',
-    title: 'English Language CBT Practice Vault',
-    description: '300 objective questions, answer keys and short explanations for senior secondary learners preparing with less panic.',
-    category: 'CBT Practice',
-    subject: 'English',
-    classLevel: 'SS2–SS3',
-    price: 4200,
-    rating: 4.7,
-    sales: 241,
-    badge: 'Most downloaded',
-    coverColor: '#e7b84a',
-    coverLabel: 'CBT',
-    seller: { name: 'David Eze', initials: 'DE', verified: false },
-  },
-  {
-    id: 'demo-basic-science',
-    title: 'Basic Science Lab Activity Cards',
-    description: 'Low-cost practical activity cards built for Nigerian classrooms, including materials lists and teacher talking points.',
-    category: 'Classroom Resources',
-    subject: 'Basic Science',
-    classLevel: 'JSS1',
-    price: 2200,
-    rating: 4.6,
-    sales: 72,
-    badge: null,
-    coverColor: '#5875a9',
-    coverLabel: 'LAB',
-    seller: { name: 'Bisi Adebayo', initials: 'BA', verified: true },
-  },
-  {
-    id: 'demo-literacy-notes',
-    title: 'Primary 4 Literacy Lesson Notes',
-    description: 'Four weeks of practical literacy notes with read-aloud activities and ready-to-use classwork for primary teachers.',
-    category: 'Lesson Notes',
-    subject: 'English',
-    classLevel: 'Primary 4',
-    price: 1800,
-    rating: 4.9,
-    sales: 58,
-    badge: 'New',
-    coverColor: '#976e9e',
-    coverLabel: 'LIT',
-    seller: { name: 'Morenike James', initials: 'MJ', verified: true },
-  },
-  {
-    id: 'demo-accounting-waec',
-    title: 'Financial Accounting WAEC Quick Revision',
-    description: 'Concise worked solutions and topic checklists for final-week revision without the midnight cramming spiral.',
-    category: 'Exam Prep',
-    subject: 'Accounting',
-    classLevel: 'SS3',
-    price: 3900,
-    rating: 4.8,
-    sales: 113,
-    badge: 'WAEC ready',
-    coverColor: '#315b58',
-    coverLabel: 'ACC',
-    seller: { name: 'Tunde Ojo', initials: 'TO', verified: true },
-  },
-];
-
-const demoSummary = { notes: 1284, sellers: 327, paid: 4860, buyersToday: 142 };
-const demoSeller = { totalEarnings: 486500, availablePayout: 128400, totalSales: 218, views: 12480, pendingProducts: 2 };
-const demoAdmin = { totalRevenue: 18425000, commission: 2763750, pendingApprovals: 18, payouts: 842000 };
 const BUSINESS_NAME = 'LessonMart by Moses Nduka';
 const OWNER_NAME = 'Moses Nduka';
 const SUPPORT_WHATSAPP = '2348136377571';
@@ -169,44 +61,9 @@ const SUPPORT_WHATSAPP_URL = `https://wa.me/${SUPPORT_WHATSAPP}?text=Hello%20Les
 const SUPPORT_EMAIL = 'ndukamoses@gmail.com';
 const ADMIN_EMAIL = SUPPORT_EMAIL;
 const featuredSeller = { name: OWNER_NAME, role: 'Founder', badge: 'Verified Owner', initials: 'MN' };
-const demoSellerNames = new Set([
-  'Mrs. Adebayo',
-  'Mr. Chukwu',
-  'Mr. Ade',
-  'Mrs. Okafor',
-  'Miss Ibrahim',
-  'Chinonso Okeke',
-  'Amina Bello',
-  'David Eze',
-  'Bisi Adebayo',
-  'Morenike James',
-  'Tunde Ojo',
-]);
-const isDemoSeller = (name: string) => demoSellerNames.has(name);
 const naira = (value: number) => `₦${value.toLocaleString('en-NG')}`;
 const compactNaira = (value: number) => value >= 1000000 ? `₦${(value / 1000000).toFixed(value % 1000000 === 0 ? 0 : 1)}M+` : naira(value);
 const compact = (value: number) => value >= 1000 ? `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k` : value.toLocaleString();
-
-async function downloadLicensedPdf(product: Product, buyerEmail: string) {
-  const pdf = await PDFDocument.create();
-  const page = pdf.addPage([595, 842]);
-  const heading = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const body = await pdf.embedFont(StandardFonts.Helvetica);
-  page.drawText('LessonMart', { x: 48, y: 770, size: 18, font: heading, color: rgb(0.05, 0.48, 0.37) });
-  page.drawText(product.title, { x: 48, y: 710, size: 22, font: heading, maxWidth: 500, color: rgb(0.06, 0.1, 0.15) });
-  page.drawText(`${product.subject} · ${product.classLevel}`, { x: 48, y: 675, size: 12, font: body, color: rgb(0.35, 0.4, 0.4) });
-  page.drawText('Preview copy — full classroom resource attached to your order.', { x: 48, y: 615, size: 13, font: body, color: rgb(0.2, 0.25, 0.25) });
-  page.drawText(`Licensed to ${buyerEmail} - LessonMart`, { x: 100, y: 380, size: 24, font: heading, color: rgb(0.05, 0.48, 0.37), rotate: degrees(28), opacity: 0.18 });
-  page.drawText('Instant download · Verified seller · Watermarked', { x: 48, y: 72, size: 10, font: body, color: rgb(0.35, 0.4, 0.4) });
-  const bytes = await pdf.save();
-  const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${product.id}-lessonmart.pdf`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
 
 function useDemoNotice() {
   const [notice, setNotice] = useState('');
@@ -302,29 +159,25 @@ function Notice({ message }: { message: string }) {
   </div>;
 }
 
-function Cover({ product, large = false }: { product: Product; large?: boolean }) {
+function Cover({ product, large = false }: { product: ProductRecord; large?: boolean }) {
   return <div className={`relative overflow-hidden ${large ? 'h-64 sm:h-80' : 'h-52'} rounded-[calc(var(--radius)-.2rem)]`} style={{ backgroundColor: product.coverColor }}>
+    {product.previewUrl && <img src={product.previewUrl} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />}
     <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 74% 20%, #fff 0, transparent 26%), linear-gradient(125deg, transparent 42%, rgba(255,255,255,.28) 42%, transparent 61%)' }} />
     <div className="absolute left-5 top-5 flex items-center gap-2 text-xs font-bold uppercase tracking-[.2em] text-white/80"><FileText size={14} /> LessonMart file</div>
     <div className={`absolute bottom-4 left-5 font-display font-bold leading-none tracking-tight text-white ${large ? 'text-5xl' : 'text-4xl'}`}>{product.coverLabel}</div>
-    {product.badge && <span className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-widest text-[hsl(var(--foreground))]">{product.badge}</span>}
   </div>;
 }
 
-function ProductCard({ product, onOpen, onAdd, added }: { product: Product; onOpen: (product: Product) => void; onAdd: (product: Product) => void; added: boolean }) {
+function ProductCard({ product, onOpen, onAdd, added }: { product: ProductRecord; onOpen: (product: ProductRecord) => void; onAdd: (product: ProductRecord) => void; added: boolean }) {
   return <article className="lift group rounded-[1.15rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2.5 shadow-[var(--shadow-sm)]" data-testid={`card-product-${product.id}`}>
     <button className="block w-full text-left" onClick={() => onOpen(product)} data-testid={`button-view-product-${product.id}`}>
       <Cover product={product} />
       <div className="px-2 pb-1 pt-4">
-        <div className="mb-2 flex items-center justify-between gap-2 text-xs text-[hsl(var(--muted-foreground))]">
-          <span>{product.subject} · {product.classLevel}</span>
-          <span className="flex items-center gap-1 font-semibold text-[hsl(var(--foreground))]"><Star size={13} fill="currentColor" className="text-[hsl(var(--accent))]" /> {product.rating}</span>
-        </div>
+        <p className="mb-2 text-xs text-[hsl(var(--muted-foreground))]">{product.subject} · {product.gradeLevel}</p>
         <h3 className="font-display text-[1.1rem] font-bold leading-snug group-hover:text-[hsl(var(--primary))]">{product.title}</h3>
-        {isDemoSeller(product.seller.name) && <span className="mt-3 inline-flex rounded-full bg-[hsl(var(--secondary))] px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-[hsl(var(--primary))]">Demo Seller</span>}
         <div className="mt-4 flex items-end justify-between gap-2">
           <span className="font-display text-xl font-bold">{naira(product.price)}</span>
-          <span className="text-xs text-[hsl(var(--muted-foreground))]">{product.sales} sold</span>
+          <span className="truncate text-xs text-[hsl(var(--muted-foreground))]">By {product.seller.name}</span>
         </div>
       </div>
     </button>
@@ -334,7 +187,7 @@ function ProductCard({ product, onOpen, onAdd, added }: { product: Product; onOp
   </article>;
 }
 
-function ProductModal({ product, onClose, onAdd, added }: { product: Product | null; onClose: () => void; onAdd: (product: Product) => void; added: boolean }) {
+function ProductModal({ product, onClose, onAdd, added }: { product: ProductRecord | null; onClose: () => void; onAdd: (product: ProductRecord) => void; added: boolean }) {
   if (!product) return null;
   const detail = product;
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[hsl(var(--foreground)/.55)] p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-labelledby="product-modal-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} data-testid="dialog-product-detail">
@@ -343,13 +196,12 @@ function ProductModal({ product, onClose, onAdd, added }: { product: Product | n
         <div className="p-4 sm:p-6"><Cover product={detail} large /></div>
         <div className="relative p-6 sm:p-10">
           <button className="absolute right-5 top-5 grid h-9 w-9 place-items-center rounded-full border border-[hsl(var(--border))] hover:bg-[hsl(var(--secondary))]" onClick={onClose} aria-label="Close product details" data-testid="button-close-product"><X size={17} /></button>
-          <span className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">{detail.category}</span>
+          <span className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">{detail.subject}</span>
           <h2 id="product-modal-title" className="mt-3 max-w-lg font-display text-3xl font-bold leading-tight sm:text-4xl">{detail.title}</h2>
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-[hsl(var(--muted-foreground))]"><span className="flex items-center gap-1 font-bold text-[hsl(var(--foreground))]"><Star size={15} fill="currentColor" className="text-[hsl(var(--accent))]" /> {detail.rating}</span><span>·</span><span>{detail.sales} teachers and students bought this</span></div>
           <p className="mt-7 leading-7 text-[hsl(var(--muted-foreground))]">{detail.description}</p>
           <div className="mt-7 grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-[hsl(var(--secondary))] p-4"><span className="block text-xs text-[hsl(var(--muted-foreground))]">Format</span><strong className="mt-1 block">PDF download</strong></div>
-            <div className="rounded-xl bg-[hsl(var(--secondary))] p-4"><span className="block text-xs text-[hsl(var(--muted-foreground))]">Level</span><strong className="mt-1 block">{detail.classLevel}</strong></div>
+            <div className="rounded-xl bg-[hsl(var(--secondary))] p-4"><span className="block text-xs text-[hsl(var(--muted-foreground))]">Resource</span><strong className="mt-1 block">{detail.fileUrl ? 'PDF download' : 'Resource file pending'}</strong></div>
+            <div className="rounded-xl bg-[hsl(var(--secondary))] p-4"><span className="block text-xs text-[hsl(var(--muted-foreground))]">Grade level</span><strong className="mt-1 block">{detail.gradeLevel}</strong></div>
           </div>
           <div className="mt-9 flex flex-wrap items-center justify-between gap-4 border-t border-[hsl(var(--border))] pt-6">
             <span className="font-display text-3xl font-bold">{naira(detail.price)}</span>
@@ -357,14 +209,14 @@ function ProductModal({ product, onClose, onAdd, added }: { product: Product | n
               {added ? <><Check size={17} /> In your bag</> : <><ShoppingBag size={17} /> Add to bag</>}
             </button>
           </div>
-          <div className="mt-6 flex flex-wrap items-center gap-3 text-sm"><span className="grid h-9 w-9 place-items-center rounded-full bg-[hsl(var(--accent))] text-xs font-extrabold text-[hsl(var(--accent-foreground))]">{detail.seller.initials}</span><span>By <strong>{detail.seller.name}</strong>{detail.seller.verified && <BadgeCheck size={15} className="ml-1 inline text-[hsl(var(--primary))]" />}</span>{isDemoSeller(detail.seller.name) && <span className="rounded-full bg-[hsl(var(--secondary))] px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-[hsl(var(--primary))]">Demo Seller</span>}</div>
+          <div className="mt-6 flex flex-wrap items-center gap-3 text-sm"><span className="grid h-9 w-9 place-items-center rounded-full bg-[hsl(var(--accent))] text-xs font-extrabold text-[hsl(var(--accent-foreground))]">{detail.seller.initials}</span><span>By <strong>{detail.seller.name}</strong></span></div>
         </div>
       </div>
     </div>
   </div>;
 }
 
-function CheckoutModal({ product, buyerEmail, onClose, onComplete, loading }: { product: Product | null; buyerEmail: string; onClose: () => void; onComplete: () => void; loading: boolean }) {
+function CheckoutModal({ product, buyerEmail, onClose, onComplete, loading }: { product: ProductRecord | null; buyerEmail: string; onClose: () => void; onComplete: () => void; loading: boolean }) {
   if (!product) return null;
   const submit = (event: FormEvent) => { event.preventDefault(); onComplete(); };
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[hsl(var(--foreground)/.55)] p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-labelledby="checkout-title" data-testid="dialog-checkout">
@@ -376,13 +228,13 @@ function CheckoutModal({ product, buyerEmail, onClose, onComplete, loading }: { 
   </div>;
 }
 
-function CartSheet({ product, onClose, onCheckout, onRemove }: { product: Product | null; onClose: () => void; onCheckout: (product: Product) => void; onRemove: () => void }) {
+function CartSheet({ product, onClose, onCheckout, onRemove }: { product: ProductRecord | null; onClose: () => void; onCheckout: (product: ProductRecord) => void; onRemove: () => void }) {
   if (!product) return null;
   return <div className="fixed inset-0 z-40 bg-[hsl(var(--foreground)/.4)]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} data-testid="dialog-cart">
     <aside className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-[hsl(var(--card))] p-6 shadow-2xl fade-up">
       <div className="flex items-center justify-between"><div><span className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Your bag</span><h2 className="mt-1 font-display text-2xl font-bold">Ready when you are.</h2></div><button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full border border-[hsl(var(--border))]" aria-label="Close bag" data-testid="button-close-cart"><X size={17} /></button></div>
       <div className="mt-8 flex-1"><div className="flex gap-4 border-b border-[hsl(var(--border))] pb-5"><div className="h-20 w-20 shrink-0 rounded-xl" style={{ backgroundColor: product.coverColor }} /><div className="min-w-0 flex-1"><p className="font-semibold leading-snug">{product.title}</p><p className="mt-2 font-mono text-sm">{naira(product.price)}</p><button onClick={onRemove} className="mt-2 text-xs font-bold text-[hsl(var(--destructive))]" data-testid="button-remove-cart">Remove</button></div></div></div>
-      <div className="border-t border-[hsl(var(--border))] pt-5"><div className="flex justify-between"><span className="text-[hsl(var(--muted-foreground))]">Total</span><strong className="font-display text-2xl">{naira(product.price)}</strong></div><button onClick={() => onCheckout(product)} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--primary))] py-3.5 font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-checkout">Checkout <ArrowRight size={17} /></button><p className="mt-3 text-center text-xs text-[hsl(var(--muted-foreground))]">Instant PDF access after payment. Need help? <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="font-bold text-[hsl(var(--primary))] hover:underline">WhatsApp support</a>.</p></div>
+       <div className="border-t border-[hsl(var(--border))] pt-5"><div className="flex justify-between"><span className="text-[hsl(var(--muted-foreground))]">Total</span><strong className="font-display text-2xl">{naira(product.price)}</strong></div><button onClick={() => onCheckout(product)} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--primary))] py-3.5 font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-checkout">Checkout <ArrowRight size={17} /></button><p className="mt-3 text-center text-xs text-[hsl(var(--muted-foreground))]">Paystack checkout is not connected yet, so this order will remain unpaid. Need help? <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="font-bold text-[hsl(var(--primary))] hover:underline">WhatsApp support</a>.</p></div>
     </aside>
   </div>;
 }
@@ -391,28 +243,28 @@ function Marketplace() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const productsQuery = useQuery({ queryKey: ['supabase', 'marketplace-products'], queryFn: listMarketplaceProducts, enabled: isSupabaseConfigured, retry: false });
-  const summaryQuery = useQuery({ queryKey: ['supabase', 'marketplace-summary'], queryFn: getMarketplaceSummary, enabled: isSupabaseConfigured, retry: false });
-  const products: Product[] = isSupabaseConfigured ? productsQuery.data ?? [] : demoProducts;
-  const summary = summaryQuery.data ?? (isSupabaseConfigured ? { notes: 0, sellers: 0, paid: 0, buyersToday: 0 } : demoSummary);
-  const statsReady = !isSupabaseConfigured || (!summaryQuery.isLoading && !summaryQuery.isError);
+  const products = productsQuery.data ?? [];
+  const subjects = useMemo(() => [...new Set(products.map((product) => product.subject).filter(Boolean))].sort(), [products]);
+  const sellerCount = new Set(products.map((product) => product.sellerId)).size;
+  const statsReady = isSupabaseConfigured && !productsQuery.isLoading && !productsQuery.isError;
   const publicStats = [
-    ['Notes & resources', statsReady ? compact(summary.notes) : '—'],
-    ['Independent sellers', statsReady ? compact(summary.sellers) : '—'],
-    ['Paid out so far', statsReady ? compactNaira(summary.paid) : '—'],
-    ['Buyers today', statsReady ? compact(summary.buyersToday) : '—'],
+    ['Live resources', statsReady ? compact(products.length) : '—'],
+    ['Listed sellers', statsReady ? compact(sellerCount) : '—'],
+    ['Subjects', statsReady ? compact(subjects.length) : '—'],
+    ['Currency', 'NGN'],
   ];
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All resources');
-  const [selected, setSelected] = useState<Product | null>(null);
-  const [cart, setCart] = useState<Product | null>(null);
-  const [checkout, setCheckout] = useState<Product | null>(null);
+  const [subject, setSubject] = useState('All subjects');
+  const [selected, setSelected] = useState<ProductRecord | null>(null);
+  const [cart, setCart] = useState<ProductRecord | null>(null);
+  const [checkout, setCheckout] = useState<ProductRecord | null>(null);
   const { notice, notify } = useDemoNotice();
   const order = useMutation({ mutationFn: createPendingOrder });
   const filtered = useMemo(() => products.filter((product) => {
-    const matchesSearch = `${product.title} ${product.subject} ${product.category} ${product.classLevel}`.toLowerCase().includes(search.toLowerCase());
-    return matchesSearch && (category === 'All resources' || product.category === category);
-  }), [products, search, category]);
-  const addToCart = (product: Product) => { setCart(product); notify(`${product.title} added to your bag`); };
+    const matchesSearch = `${product.title} ${product.subject} ${product.gradeLevel}`.toLowerCase().includes(search.toLowerCase());
+    return matchesSearch && (subject === 'All subjects' || product.subject === subject);
+  }), [products, search, subject]);
+  const addToCart = (product: ProductRecord) => { setCart(product); notify(`${product.title} added to your bag`); };
   const completeOrder = () => {
     if (!checkout) return;
     if (!user) {
@@ -422,10 +274,7 @@ function Marketplace() {
       return;
     }
     if (!isSupabaseConfigured) {
-      void downloadLicensedPdf(checkout, user.email ?? SUPPORT_EMAIL);
-      setCheckout(null);
-      setCart(null);
-      notify('Demo download only — no payment was collected.');
+      notify('Supabase is required to create an order.');
       return;
     }
     order.mutate(checkout.id, {
@@ -437,9 +286,9 @@ function Marketplace() {
       onError: (error) => notify(`Could not create order: ${error.message}`),
     });
   };
-  return <Shell cartCount={cart ? 1 : 0} onCart={() => setCart(cart ?? products[0])}>
+  return <Shell cartCount={cart ? 1 : 0} onCart={() => setCart(cart ?? products[0] ?? null)}>
     <main>
-      {isSupabaseConfigured && (productsQuery.isError || summaryQuery.isError) && <div className="mx-auto max-w-[1240px] px-5 pt-6 lg:px-8"><div className="rounded-xl border border-[hsl(var(--accent)/.5)] bg-[hsl(var(--accent)/.12)] px-4 py-3 text-sm" role="status">Supabase credentials are configured, but the LessonMart schema is not available yet. Run <span className="font-mono text-xs">artifacts/lessonmart/supabase/migrations/20261013_lessonmart_core.sql</span> in your Supabase SQL Editor to enable live listings, account profiles and private uploads.</div></div>}
+      {!isSupabaseConfigured ? <div className="mx-auto max-w-[1240px] px-5 pt-6 lg:px-8"><div className="rounded-xl border border-[hsl(var(--destructive)/.35)] bg-[hsl(var(--card))] px-4 py-3 text-sm" role="alert">Supabase is not configured. The marketplace will not show sample products or accept demo orders.</div></div> : productsQuery.isError && <div className="mx-auto max-w-[1240px] px-5 pt-6 lg:px-8"><div className="rounded-xl border border-[hsl(var(--accent)/.5)] bg-[hsl(var(--accent)/.12)] px-4 py-3 text-sm" role="status">Could not load products from Supabase: {productsQuery.error.message}. Apply <span className="font-mono text-xs">artifacts/lessonmart/supabase/migrations/20261014_connect_existing_lessonmart.sql</span> if the seller view or secure policies are not installed.</div></div>}
       <section className="mx-auto max-w-[1240px] px-5 pb-14 pt-12 lg:px-8 lg:pb-20 lg:pt-20">
         <div className="grid items-end gap-10 lg:grid-cols-[1.1fr_.9fr]">
           <div className="fade-up"><div className="mb-6 flex items-center gap-2 text-sm font-bold text-[hsl(var(--primary))]"><span className="h-2 w-2 rounded-full bg-[hsl(var(--accent))]" /> Built for the Nigerian classroom</div><h1 className="max-w-3xl font-display text-[3.35rem] font-bold leading-[.98] tracking-[-.06em] sm:text-6xl lg:text-[5.7rem]">Good teaching<br /><span className="text-[hsl(var(--primary))]">should pay off.</span></h1><p className="mt-7 max-w-xl text-lg leading-8 text-[hsl(var(--muted-foreground))]">Find the lesson notes, WAEC drills and classroom resources that make tomorrow easier — or turn your hard-won classroom knowledge into income.</p><div className="mt-8 flex flex-wrap gap-3"><a href="#catalog" className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-5 py-3.5 text-sm font-bold text-[hsl(var(--primary-foreground))] hover:brightness-110" data-testid="link-browse-catalog">Browse the shelf <ArrowDownIcon /></a><Link href="/seller" className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-5 py-3.5 text-sm font-bold hover:bg-[hsl(var(--secondary))]" data-testid="link-start-selling">Start selling <ArrowRight size={16} /></Link></div></div>
@@ -448,9 +297,8 @@ function Marketplace() {
         <div className="mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--border))] sm:grid-cols-4 fade-up-3">{publicStats.map(([label, value]) => <div className="bg-[hsl(var(--card))] px-4 py-5 sm:px-6" key={label}><p className="font-display text-2xl font-bold sm:text-3xl">{value}</p><p className="mt-1 text-xs font-semibold text-[hsl(var(--muted-foreground))]">{label}</p></div>)}</div>
       </section>
       <section id="catalog" className="border-t border-[hsl(var(--border))] bg-[hsl(var(--secondary)/.4)]"><div className="mx-auto max-w-[1240px] px-5 py-14 lg:px-8 lg:py-20"><div className="flex flex-col justify-between gap-6 md:flex-row md:items-end"><div><span className="text-xs font-extrabold uppercase tracking-[.2em] text-[hsl(var(--primary))]">The shelf</span><h2 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl">Resources with receipts.</h2><p className="mt-2 text-[hsl(var(--muted-foreground))]">Made in real classrooms. Ready for your next lesson or exam.</p></div><div className="flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]"><span className="h-2 w-2 rounded-full bg-[hsl(var(--primary))]" /> Updated daily by Nigerian educators</div></div>
-        <div className="mt-9 flex flex-col gap-3 lg:flex-row"><label className="relative flex-1"><Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search WAEC, JSS2 maths, scheme of work..." className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-3.5 pl-11 pr-4 outline-none focus:border-[hsl(var(--primary))]" data-testid="input-search-products" /></label><div className="flex gap-2 overflow-auto pb-1">{['All resources', 'Lesson Notes', 'Exam Prep', 'CBT Practice', 'Classroom Resources'].map((item) => <button key={item} onClick={() => setCategory(item)} className={`whitespace-nowrap rounded-xl px-4 py-3 text-sm font-bold transition ${category === item ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]' : 'border border-[hsl(var(--border))] bg-[hsl(var(--card))] hover:bg-[hsl(var(--secondary))]'}`} data-testid={`button-filter-${item.toLowerCase().replaceAll(' ', '-')}`}><Filter size={14} className="mr-2 inline" />{item}</button>)}</div></div>
-        {productsQuery.isLoading && isSupabaseConfigured ? <div className="mt-9 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3].map((item) => <div className="h-[390px] animate-pulse rounded-2xl bg-[hsl(var(--muted))]" key={item} />)}</div> : productsQuery.isError && isSupabaseConfigured ? <div className="mt-9 rounded-2xl border border-dashed border-[hsl(var(--destructive)/.4)] bg-[hsl(var(--card))] px-6 py-12 text-center"><PackageOpen className="mx-auto text-[hsl(var(--destructive))]" size={32} /><h3 className="mt-4 font-display text-xl font-bold">Supabase setup is not ready yet.</h3><p className="mx-auto mt-2 max-w-xl text-sm text-[hsl(var(--muted-foreground))]">{productsQuery.error.message}. Apply the LessonMart migration in the Supabase SQL Editor to create the tables and private file bucket.</p></div> : filtered.length ? <div className="mt-9 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{filtered.map((product) => <ProductCard key={product.id} product={product} onOpen={setSelected} onAdd={addToCart} added={cart?.id === product.id} />)}</div> : <div className="mt-9 rounded-2xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--card))] px-6 py-16 text-center"><PackageOpen className="mx-auto text-[hsl(var(--primary))]" size={32} /><h3 className="mt-4 font-display text-xl font-bold">No resources on this shelf yet.</h3><p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">Try a different subject or clear the search.</p><button onClick={() => { setSearch(''); setCategory('All resources'); }} className="mt-5 rounded-xl bg-[hsl(var(--primary))] px-4 py-2.5 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-clear-filters">Clear filters</button></div>}
-        {!isSupabaseConfigured && <p className="mt-5 text-xs text-[hsl(var(--muted-foreground))]" data-testid="status-demo-mode">Showing the local demo shelf because Supabase credentials are not configured.</p>}
+        <div className="mt-9 flex flex-col gap-3 lg:flex-row"><label className="relative flex-1"><Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by title, subject or grade level..." className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-3.5 pl-11 pr-4 outline-none focus:border-[hsl(var(--primary))]" data-testid="input-search-products" /></label><div className="flex gap-2 overflow-auto pb-1">{['All subjects', ...subjects].map((item) => <button key={item} onClick={() => setSubject(item)} className={`whitespace-nowrap rounded-xl px-4 py-3 text-sm font-bold transition ${subject === item ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]' : 'border border-[hsl(var(--border))] bg-[hsl(var(--card))] hover:bg-[hsl(var(--secondary))]'}`} data-testid={`button-filter-${item.toLowerCase().replaceAll(' ', '-')}`}>{item}</button>)}</div></div>
+        {productsQuery.isLoading && isSupabaseConfigured ? <div className="mt-9 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3].map((item) => <div className="h-[390px] animate-pulse rounded-2xl bg-[hsl(var(--muted))]" key={item} />)}</div> : productsQuery.isError && isSupabaseConfigured ? <div className="mt-9 rounded-2xl border border-dashed border-[hsl(var(--destructive)/.4)] bg-[hsl(var(--card))] px-6 py-12 text-center"><PackageOpen className="mx-auto text-[hsl(var(--destructive))]" size={32} /><h3 className="mt-4 font-display text-xl font-bold">Could not load live resources.</h3><p className="mx-auto mt-2 max-w-xl text-sm text-[hsl(var(--muted-foreground))]">{productsQuery.error.message}. Check the Supabase table columns and install the LessonMart security migration.</p></div> : filtered.length ? <div className="mt-9 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{filtered.map((product) => <ProductCard key={product.id} product={product} onOpen={setSelected} onAdd={addToCart} added={cart?.id === product.id} />)}</div> : <div className="mt-9 rounded-2xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--card))] px-6 py-16 text-center"><PackageOpen className="mx-auto text-[hsl(var(--primary))]" size={32} /><h3 className="mt-4 font-display text-xl font-bold">No approved resources yet.</h3><p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">{search || subject !== 'All subjects' ? 'Try another subject or clear the search.' : 'Approved products from your Supabase catalog will appear here.'}</p><button onClick={() => { setSearch(''); setSubject('All subjects'); }} className="mt-5 rounded-xl bg-[hsl(var(--primary))] px-4 py-2.5 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-clear-filters">Clear filters</button></div>}
       </div></section>
       <section className="mx-auto max-w-[1240px] px-5 pb-4 lg:px-8"><div className="grid gap-5 rounded-[1.5rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:p-8"><span className="grid h-16 w-16 place-items-center rounded-2xl bg-[hsl(var(--accent))] font-display text-xl font-bold text-[hsl(var(--accent-foreground))]">{featuredSeller.initials}</span><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Featured seller</p><h2 className="mt-1 font-display text-2xl font-bold">{featuredSeller.name}</h2><p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">{featuredSeller.role} · <span className="font-bold text-[hsl(var(--primary))]">{featuredSeller.badge}</span></p></div><a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-[hsl(var(--border))] px-4 py-3 text-sm font-bold hover:bg-[hsl(var(--secondary))]" data-testid="link-featured-seller-contact"><MessageCircle size={17} /> Contact Moses</a></div></section>
       <section className="mx-auto max-w-[1240px] px-5 py-16 lg:px-8 lg:py-24"><div className="grid items-center gap-10 rounded-[1.5rem] bg-[hsl(var(--primary))] p-7 text-[hsl(var(--primary-foreground))] sm:p-12 lg:grid-cols-[1.2fr_.8fr]"><div><span className="text-xs font-extrabold uppercase tracking-[.2em] text-[hsl(var(--accent))]">For teachers with a folder full of gold</span><h2 className="mt-4 max-w-xl font-display text-4xl font-bold leading-tight sm:text-5xl">Your best lesson should not disappear after Friday.</h2><p className="mt-5 max-w-lg leading-7 text-white/70">Package what already works, set your price, and get paid when another teacher or student finds it useful.</p><Link href="/seller" className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[hsl(var(--accent))] px-5 py-3.5 text-sm font-extrabold text-[hsl(var(--accent-foreground))]" data-testid="link-sell-banner">See the seller desk <ArrowRight size={17} /></Link></div><div className="grid grid-cols-2 gap-3"><div className="rounded-2xl bg-white/10 p-5"><Upload size={21} className="text-[hsl(var(--accent))]" /><p className="mt-10 font-display text-2xl font-bold">12 min</p><p className="mt-1 text-xs text-white/65">to list a resource</p></div><div className="mt-8 rounded-2xl bg-white/10 p-5"><Wallet size={21} className="text-[hsl(var(--accent))]" /><p className="mt-10 font-display text-2xl font-bold">₦0</p><p className="mt-1 text-xs text-white/65">to open your shelf</p></div></div></div></section>
@@ -476,7 +324,7 @@ function DashboardFrame({ title, eyebrow, children, nav, onAction }: { title: st
 function Seller() {
   const { user, profile } = useAuth();
   const sellerQuery = useQuery({ queryKey: ['supabase', 'seller-dashboard', user?.id], queryFn: () => getSellerDashboard(user!.id), enabled: Boolean(user), retry: false });
-  const seller = sellerQuery.data?.overview ?? { totalEarnings: 0, availablePayout: 0, totalSales: 0, views: 0, pendingProducts: 0 };
+  const seller = sellerQuery.data?.overview ?? { totalEarnings: 0, availablePayout: 0, totalSales: 0, pendingProducts: 0 };
   const products = sellerQuery.data?.products ?? [];
   const client = useQueryClient();
   const { notice, notify } = useDemoNotice();
@@ -484,15 +332,17 @@ function Seller() {
   const [showForm, setShowForm] = useState(false);
   const [showPayout, setShowPayout] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [previewFile, setPreviewFile] = useState<File | null>(null);
   const [savingProduct, setSavingProduct] = useState(false);
-  const [form, setForm] = useState<SellerProductInput>({ title: '', description: '', category: 'Lesson Notes', subject: 'Mathematics', classLevel: 'SS2', price: 2500 });
+  const [form, setForm] = useState<SellerProductInput>({ title: '', description: '', subject: '', gradeLevel: '', price: 2500 });
   const submitProduct = (event: FormEvent) => {
     event.preventDefault();
     if (!user || !profile) { notify('Your account profile is not ready. Apply the Supabase migration, then sign in again.'); return; }
     setSavingProduct(true);
-    void createSellerProduct(form, user.id, profile.display_name, file).then(() => {
+    void createSellerProduct(form, user.id, profile.full_name, file, previewFile).then(() => {
       setShowForm(false);
       setFile(null);
+      setPreviewFile(null);
       notify('Your product was saved and is waiting for admin approval.');
       void client.invalidateQueries({ queryKey: ['supabase', 'seller-dashboard', user.id] });
     }).catch((error: Error) => notify(`Product could not be submitted: ${error.message}`)).finally(() => setSavingProduct(false));
@@ -500,24 +350,20 @@ function Seller() {
   const action = (label: string) => { setTab(label); if (label === 'Upload product') setShowForm(true); else if (label === 'Payouts') setShowPayout(true); else if (label === 'Marketing tools') notify('Marketing links will be available after products are approved.'); };
   const requestPayout = () => {
     if (!user) return;
-    void createPayoutRequest(user.id, seller.availablePayout).then(() => {
+    void createPayoutRequest(seller.availablePayout).then(() => {
       setShowPayout(false);
       notify(`Payout request saved for admin review. Email ${SUPPORT_EMAIL} for help; no email or bank transfer is sent from this page.`);
       void client.invalidateQueries({ queryKey: ['supabase', 'seller-dashboard', user.id] });
     }).catch((error: Error) => notify(`Payout request could not be saved: ${error.message}`));
   };
-  return <><DashboardFrame title={tab === 'Overview' ? `Welcome, ${profile?.display_name ?? 'seller'}.` : tab} eyebrow="Seller desk" nav={[{ label: 'Overview', icon: LayoutDashboard, active: tab === 'Overview' }, { label: 'Products', icon: PackageOpen, active: tab === 'Products' }, { label: 'Upload product', icon: Upload }, { label: 'Marketing tools', icon: Share2 }, { label: 'Payouts', icon: Wallet }]} onAction={action}>
-    {sellerQuery.isLoading ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map((item) => <div className="h-36 animate-pulse rounded-2xl bg-[hsl(var(--muted))]" key={item} />)}</div> : sellerQuery.isError ? <div className="rounded-2xl border border-[hsl(var(--destructive)/.4)] bg-[hsl(var(--card))] p-6 text-sm" role="alert">Could not load your seller data: {sellerQuery.error.message}. Apply the LessonMart migration in Supabase and sign in again.</div> : <><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total earnings" value={naira(seller.totalEarnings)} detail="Paid orders only" icon={TrendingUp} accent /><MetricCard label="Available to withdraw" value={naira(seller.availablePayout)} detail="After existing payout requests" icon={Wallet} /><MetricCard label="Resource sales" value={seller.totalSales.toLocaleString()} detail="Paid orders" icon={ShoppingBag} /><MetricCard label="Pending review" value={seller.pendingProducts.toLocaleString()} detail="Awaiting admin approval" icon={Clock3} /></div><div className="mt-7 grid gap-7 xl:grid-cols-[1.2fr_.8fr]"><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Your shelf</p><h2 className="mt-2 font-display text-2xl font-bold">Products that keep teaching.</h2></div><button onClick={() => setShowForm(true)} className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-2.5 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-upload-product"><Plus size={16} /> Add product</button></div><div className="mt-7 space-y-3">{products.length ? products.slice(0, 5).map((product) => <div key={product.id} className="flex items-center gap-4 rounded-xl border border-[hsl(var(--border))] p-3"><div className="h-12 w-12 shrink-0 rounded-lg" style={{ backgroundColor: product.coverColor }} /><div className="min-w-0 flex-1"><p className="truncate font-bold">{product.title}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{product.sales} paid sales · {naira(product.price)}</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider ${product.status === 'approved' ? 'bg-[hsl(var(--secondary))] text-[hsl(var(--primary))]' : 'bg-[hsl(var(--accent)/.2)] text-[hsl(var(--accent-foreground))]'}`}>{product.status}</span></div>) : <p className="rounded-xl border border-dashed border-[hsl(var(--border))] p-6 text-sm text-[hsl(var(--muted-foreground))]">Your submitted products will appear here.</p>}</div></section><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Seller account</p><h2 className="mt-2 font-display text-2xl font-bold">Payouts and resources</h2><p className="mt-4 text-sm leading-6 text-[hsl(var(--muted-foreground))]">PDF uploads are private until a buyer has a paid order. Product listings go to admin review before they appear in the marketplace.</p><button onClick={() => setShowPayout(true)} disabled={seller.availablePayout <= 0} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))] disabled:cursor-not-allowed disabled:opacity-50"><Wallet size={17} /> Request available payout</button></section></div></>}</DashboardFrame>;
-    {showForm && <ProductForm form={form} setForm={setForm} file={file} setFile={setFile} onClose={() => setShowForm(false)} onSubmit={submitProduct} loading={savingProduct} />}{showPayout && <PayoutModal amount={seller.availablePayout} onClose={() => setShowPayout(false)} onSubmit={requestPayout} />}{notice && <Notice message={notice} />}</>;
+  return <><DashboardFrame title={tab === 'Overview' ? `Welcome, ${profile?.full_name ?? 'seller'}.` : tab} eyebrow="Seller desk" nav={[{ label: 'Overview', icon: LayoutDashboard, active: tab === 'Overview' }, { label: 'Products', icon: PackageOpen, active: tab === 'Products' }, { label: 'Upload product', icon: Upload }, { label: 'Marketing tools', icon: Share2 }, { label: 'Payouts', icon: Wallet }]} onAction={action}>
+    {sellerQuery.isLoading ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map((item) => <div className="h-36 animate-pulse rounded-2xl bg-[hsl(var(--muted))]" key={item} />)}</div> : sellerQuery.isError ? <div className="rounded-2xl border border-[hsl(var(--destructive)/.4)] bg-[hsl(var(--card))] p-6 text-sm" role="alert">Could not load your seller data: {sellerQuery.error.message}. Check the database migration and sign in again.</div> : <><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total earnings" value={naira(seller.totalEarnings)} detail="Paid orders only" icon={TrendingUp} accent /><MetricCard label="Available to withdraw" value={naira(seller.availablePayout)} detail="After existing payout requests" icon={Wallet} /><MetricCard label="Resource sales" value={seller.totalSales.toLocaleString()} detail="Paid orders" icon={ShoppingBag} /><MetricCard label="Pending review" value={seller.pendingProducts.toLocaleString()} detail="Awaiting admin approval" icon={Clock3} /></div><div className="mt-7 grid gap-7 xl:grid-cols-[1.2fr_.8fr]"><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Your shelf</p><h2 className="mt-2 font-display text-2xl font-bold">Products that keep teaching.</h2></div><button onClick={() => setShowForm(true)} className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-2.5 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-upload-product"><Plus size={16} /> Add product</button></div><div className="mt-7 space-y-3">{products.length ? products.slice(0, 5).map((product) => <div key={product.id} className="flex items-center gap-4 rounded-xl border border-[hsl(var(--border))] p-3"><div className="h-12 w-12 shrink-0 rounded-lg" style={{ backgroundColor: product.coverColor }} /><div className="min-w-0 flex-1"><p className="truncate font-bold">{product.title}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{product.subject} · {product.gradeLevel} · {naira(product.price)}</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider ${product.status === 'approved' ? 'bg-[hsl(var(--secondary))] text-[hsl(var(--primary))]' : 'bg-[hsl(var(--accent)/.2)] text-[hsl(var(--accent-foreground))]'}`}>{product.status}</span></div>) : <p className="rounded-xl border border-dashed border-[hsl(var(--border))] p-6 text-sm text-[hsl(var(--muted-foreground))]">Your submitted products will appear here.</p>}</div></section><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Seller account</p><h2 className="mt-2 font-display text-2xl font-bold">Payouts and resources</h2><p className="mt-4 text-sm leading-6 text-[hsl(var(--muted-foreground))]">PDF uploads are private until a buyer has a paid order. Product listings go to admin review before they appear in the marketplace.</p><button onClick={() => setShowPayout(true)} disabled={seller.availablePayout <= 0} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))] disabled:cursor-not-allowed disabled:opacity-50"><Wallet size={17} /> Request available payout</button></section></div></>}</DashboardFrame>;
+    {showForm && <ProductForm form={form} setForm={setForm} file={file} setFile={setFile} previewFile={previewFile} setPreviewFile={setPreviewFile} onClose={() => setShowForm(false)} onSubmit={submitProduct} loading={savingProduct} />}{showPayout && <PayoutModal amount={seller.availablePayout} onClose={() => setShowPayout(false)} onSubmit={requestPayout} />}{notice && <Notice message={notice} />}</>;
 }
 
-function ProductForm({ form, setForm, file, setFile, onClose, onSubmit, loading }: { form: SellerProductInput; setForm: (form: SellerProductInput) => void; file: File | null; setFile: (file: File | null) => void; onClose: () => void; onSubmit: (event: FormEvent) => void; loading: boolean }) {
+function ProductForm({ form, setForm, file, setFile, previewFile, setPreviewFile, onClose, onSubmit, loading }: { form: SellerProductInput; setForm: (form: SellerProductInput) => void; file: File | null; setFile: (file: File | null) => void; previewFile: File | null; setPreviewFile: (file: File | null) => void; onClose: () => void; onSubmit: (event: FormEvent) => void; loading: boolean }) {
   const update = (key: keyof SellerProductInput, value: string) => setForm({ ...form, [key]: key === 'price' ? Number(value) : value });
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[hsl(var(--foreground)/.55)] p-0 backdrop-blur-sm sm:items-center sm:p-5"><div className="max-h-[94dvh] w-full max-w-2xl overflow-auto rounded-t-[1.5rem] bg-[hsl(var(--card))] p-6 shadow-2xl sm:rounded-[1.5rem] sm:p-9"><div className="flex justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">New resource</p><h2 className="mt-2 font-display text-3xl font-bold">Put your best work on the shelf.</h2></div><button onClick={onClose} aria-label="Close upload form" data-testid="button-close-upload"><X /></button></div><form onSubmit={onSubmit} className="mt-8 grid gap-5 sm:grid-cols-2"><label className="sm:col-span-2 text-sm font-bold">Product title<input required value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="e.g. SS2 Physics: Electricity Notes" className="field" data-testid="input-product-title" /></label><label className="sm:col-span-2 text-sm font-bold">What will buyers get?<textarea required rows={4} value={form.description} onChange={(e) => update('description', e.target.value)} placeholder="Tell students and teachers what makes this useful." className="field resize-none" data-testid="input-product-description" /></label><SelectField label="Category" value={form.category} options={['Lesson Notes', 'Exam Prep', 'CBT Practice', 'Classroom Resources']} onChange={(value) => update('category', value)} testId="select-product-category" /><label className="text-sm font-bold">Subject<input required value={form.subject} onChange={(e) => update('subject', e.target.value)} className="field" data-testid="input-product-subject" /></label><label className="text-sm font-bold">Class level<input required value={form.classLevel} onChange={(e) => update('classLevel', e.target.value)} className="field" data-testid="input-product-level" /></label><label className="text-sm font-bold">Price in naira<input required min="500" type="number" value={form.price} onChange={(e) => update('price', e.target.value)} className="field" data-testid="input-product-price" /></label><label className="sm:col-span-2 text-sm font-bold">Resource PDF (optional)<input type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="field file:mr-3 file:rounded-lg file:border-0 file:bg-[hsl(var(--secondary))] file:px-3 file:py-2" data-testid="input-product-file" /><span className="mt-1 block text-xs font-normal text-[hsl(var(--muted-foreground))]">PDF only, up to 50 MB. Stored privately in Supabase until a buyer has a paid order.</span></label><div className="sm:col-span-2 flex justify-end gap-3 border-t border-[hsl(var(--border))] pt-5"><button type="button" onClick={onClose} className="rounded-xl px-5 py-3 text-sm font-bold" data-testid="button-cancel-upload">Cancel</button><button disabled={loading} className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-5 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-submit-product">{loading && <LoaderCircle size={16} className="spin" />} Submit for review</button></div></form></div></div>;
-}
-
-function SelectField({ label, value, options, onChange, testId }: { label: string; value: string; options: string[]; onChange: (value: string) => void; testId: string }) {
-  return <label className="text-sm font-bold">{label}<span className="relative mt-2 block"><select value={value} onChange={(e) => onChange(e.target.value)} className="field mt-0 appearance-none" data-testid={testId}>{options.map((option) => <option value={option} key={option}>{option}</option>)}</select><ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2" /></span></label>;
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[hsl(var(--foreground)/.55)] p-0 backdrop-blur-sm sm:items-center sm:p-5"><div className="max-h-[94dvh] w-full max-w-2xl overflow-auto rounded-t-[1.5rem] bg-[hsl(var(--card))] p-6 shadow-2xl sm:rounded-[1.5rem] sm:p-9"><div className="flex justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">New resource</p><h2 className="mt-2 font-display text-3xl font-bold">Put your best work on the shelf.</h2></div><button onClick={onClose} aria-label="Close upload form" data-testid="button-close-upload"><X /></button></div><form onSubmit={onSubmit} className="mt-8 grid gap-5 sm:grid-cols-2"><label className="sm:col-span-2 text-sm font-bold">Product title<input required value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="e.g. SS2 Physics: Electricity Notes" className="field" data-testid="input-product-title" /></label><label className="sm:col-span-2 text-sm font-bold">What will buyers get?<textarea required rows={4} value={form.description} onChange={(e) => update('description', e.target.value)} placeholder="Tell students and teachers what makes this useful." className="field resize-none" data-testid="input-product-description" /></label><label className="text-sm font-bold">Subject<input required value={form.subject} onChange={(e) => update('subject', e.target.value)} className="field" data-testid="input-product-subject" /></label><label className="text-sm font-bold">Grade level<input required value={form.gradeLevel} onChange={(e) => update('gradeLevel', e.target.value)} placeholder="e.g. SS2" className="field" data-testid="input-product-level" /></label><label className="text-sm font-bold">Price in naira<input required min="500" type="number" value={form.price} onChange={(e) => update('price', e.target.value)} className="field" data-testid="input-product-price" /></label><label className="sm:col-span-2 text-sm font-bold">Resource PDF<input required type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="field file:mr-3 file:rounded-lg file:border-0 file:bg-[hsl(var(--secondary))] file:px-3 file:py-2" data-testid="input-product-file" /><span className="mt-1 block text-xs font-normal text-[hsl(var(--muted-foreground))]">Required PDF, up to 50 MB. Stored privately in Supabase until a buyer has a paid order.</span></label><label className="sm:col-span-2 text-sm font-bold">Preview image (optional)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setPreviewFile(event.target.files?.[0] ?? null)} className="field file:mr-3 file:rounded-lg file:border-0 file:bg-[hsl(var(--secondary))] file:px-3 file:py-2" data-testid="input-product-preview" /><span className="mt-1 block text-xs font-normal text-[hsl(var(--muted-foreground))]">JPG, PNG or WebP, up to 5 MB. Preview images are public.</span></label><div className="sm:col-span-2 flex justify-end gap-3 border-t border-[hsl(var(--border))] pt-5"><button type="button" onClick={onClose} className="rounded-xl px-5 py-3 text-sm font-bold" data-testid="button-cancel-upload">Cancel</button><button disabled={loading || !file} className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-5 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))]" data-testid="button-submit-product">{loading && <LoaderCircle size={16} className="spin" />} Submit for review</button></div></form></div></div>;
 }
 
 function PayoutModal({ amount, onClose, onSubmit }: { amount: number; onClose: () => void; onSubmit: () => void }) {
