@@ -17,6 +17,7 @@ import {
   LoaderCircle,
   Menu,
   MessageCircle,
+  MoreHorizontal,
   PackageOpen,
   PenLine,
   Plus,
@@ -45,6 +46,7 @@ import {
   listMarketplaceProducts,
   listPendingPayouts,
   listPendingProducts,
+  listProfilesForAdmin,
   setPayoutStatus,
   setProductReviewStatus,
   type ProductRecord,
@@ -62,10 +64,9 @@ const SUPPORT_EMAIL = 'ndukamoses@gmail.com';
 const ADMIN_EMAIL = SUPPORT_EMAIL;
 const featuredSeller = { name: OWNER_NAME, role: 'Founder', badge: 'Verified Owner', initials: 'MN' };
 const naira = (value: number) => `₦${value.toLocaleString('en-NG')}`;
-const compactNaira = (value: number) => value >= 1000000 ? `₦${(value / 1000000).toFixed(value % 1000000 === 0 ? 0 : 1)}M+` : naira(value);
 const compact = (value: number) => value >= 1000 ? `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k` : value.toLocaleString();
 
-function useDemoNotice() {
+function useNotice() {
   const [notice, setNotice] = useState('');
   const notify = (message: string) => {
     setNotice(message);
@@ -89,7 +90,7 @@ function Shell({ children, cartCount, onCart }: { children: ReactNode; cartCount
   const [location] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const { user } = useAuth();
-  const onMarketplace = location === '/';
+  const onMarketplace = location === '/' || location === '/marketplace';
   return (
     <div className="noise app-shell">
       <header className="sticky top-0 z-40 border-b border-[hsl(var(--border))] bg-[hsl(var(--background)/.9)] backdrop-blur-xl">
@@ -102,7 +103,7 @@ function Shell({ children, cartCount, onCart }: { children: ReactNode; cartCount
             <Link href="/contact" className={location === '/contact' ? 'text-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))] transition-colors hover:text-[hsl(var(--foreground))]'} data-testid="link-contact">Contact</Link>
           </nav>
           <div className="flex items-center gap-2">
-            <span className="hidden items-center gap-2 rounded-full bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-semibold text-[hsl(var(--secondary-foreground))] lg:flex" title={isSupabaseConfigured ? 'Supabase credentials configured' : 'Demo mode'}>
+            <span className="hidden items-center gap-2 rounded-full bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-semibold text-[hsl(var(--secondary-foreground))] lg:flex" title={isSupabaseConfigured ? 'Supabase credentials configured' : 'Supabase not configured'}>
               <span className={`h-2 w-2 rounded-full ${isSupabaseConfigured ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--accent))]'}`} />
               Lagos · NGN
             </span>
@@ -258,7 +259,7 @@ function Marketplace() {
   const [selected, setSelected] = useState<ProductRecord | null>(null);
   const [cart, setCart] = useState<ProductRecord | null>(null);
   const [checkout, setCheckout] = useState<ProductRecord | null>(null);
-  const { notice, notify } = useDemoNotice();
+  const { notice, notify } = useNotice();
   const order = useMutation({ mutationFn: createPendingOrder });
   const filtered = useMemo(() => products.filter((product) => {
     const matchesSearch = `${product.title} ${product.subject} ${product.gradeLevel}`.toLowerCase().includes(search.toLowerCase());
@@ -327,7 +328,7 @@ function Seller() {
   const seller = sellerQuery.data?.overview ?? { totalEarnings: 0, availablePayout: 0, totalSales: 0, pendingProducts: 0 };
   const products = sellerQuery.data?.products ?? [];
   const client = useQueryClient();
-  const { notice, notify } = useDemoNotice();
+  const { notice, notify } = useNotice();
   const [tab, setTab] = useState('Overview');
   const [showForm, setShowForm] = useState(false);
   const [showPayout, setShowPayout] = useState(false);
@@ -374,14 +375,16 @@ function Admin() {
   const { profile } = useAuth();
   const client = useQueryClient();
   const [tab, setTab] = useState('Overview');
-  const { notice, notify } = useDemoNotice();
+  const { notice, notify } = useNotice();
   const overview = useQuery({ queryKey: ['supabase', 'admin-overview'], queryFn: getAdminDashboard, retry: false });
   const approvals = useQuery({ queryKey: ['supabase', 'admin-pending-products'], queryFn: listPendingProducts, retry: false });
   const payouts = useQuery({ queryKey: ['supabase', 'admin-pending-payouts'], queryFn: listPendingPayouts, retry: false });
+  const users = useQuery({ queryKey: ['supabase', 'admin-profiles'], queryFn: listProfilesForAdmin, enabled: profile?.role === 'admin', retry: false });
   const invalidateAdmin = () => {
     void client.invalidateQueries({ queryKey: ['supabase', 'admin-overview'] });
     void client.invalidateQueries({ queryKey: ['supabase', 'admin-pending-products'] });
     void client.invalidateQueries({ queryKey: ['supabase', 'admin-pending-payouts'] });
+    void client.invalidateQueries({ queryKey: ['supabase', 'admin-profiles'] });
   };
   const review = useMutation({
     mutationFn: ({ id, status }: { id: string; status: 'approved' | 'rejected' }) => setProductReviewStatus(id, status),
@@ -393,7 +396,7 @@ function Admin() {
     onSuccess: () => { invalidateAdmin(); notify('Payout status updated. Marking paid records an external transfer; it does not send one.'); },
     onError: (error) => notify(`Could not update payout: ${error.message}`),
   });
-  const admin = overview.data ?? { totalRevenue: 0, commission: 0, pendingApprovals: 0, payouts: 0 };
+  const admin = overview.data ?? { totalRevenue: 0, paidOrders: 0, pendingApprovals: 0, payouts: 0 };
   const nav = [
     { label: 'Overview', icon: LayoutDashboard, active: tab === 'Overview' },
     { label: 'Approvals', icon: ClipboardList, active: tab === 'Approvals' },
@@ -406,10 +409,10 @@ function Admin() {
       <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-extrabold text-[hsl(var(--primary-foreground))]"><BadgeCheck size={14} /> Full access</span>
       <p className="text-xs text-[hsl(var(--muted-foreground))] sm:max-w-xs">Approve products, see paid-order revenue and manage payout requests for {BUSINESS_NAME}.</p>
     </div>
-    {overview.isError && <p className="mb-5 rounded-xl border border-[hsl(var(--destructive)/.4)] p-4 text-sm" role="alert">Could not load admin data: {overview.error.message}. Apply the LessonMart migration in Supabase.</p>}
+    {(overview.isError || approvals.isError || payouts.isError || users.isError) && <p className="mb-5 rounded-xl border border-[hsl(var(--destructive)/.4)] p-4 text-sm" role="alert">Some admin data could not be loaded: {[overview.error, approvals.error, payouts.error, users.error].filter(Boolean).map((error) => error?.message).join(' · ')}. Apply the schema-matched LessonMart migration in Supabase and confirm this profile has role `admin`.</p>}
     <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
       <MetricCard label="Total revenue" value={naira(admin.totalRevenue)} detail="Paid orders only" icon={BarChart3} accent />
-      <MetricCard label="Commission earned" value={naira(admin.commission)} detail="Calculated on paid orders" icon={TrendingUp} />
+      <MetricCard label="Paid orders" value={String(admin.paidOrders)} detail="Confirmed paid status" icon={TrendingUp} />
       <MetricCard label="Pending approvals" value={String(admin.pendingApprovals)} detail="Products awaiting review" icon={Clock3} />
       <MetricCard label="Payout requests" value={naira(admin.payouts)} detail="Pending or approved amounts" icon={Wallet} />
     </div>
@@ -422,20 +425,15 @@ function Admin() {
       <section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8">
         <div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Payout requests</p><h2 className="mt-2 font-display text-2xl font-bold">Review seller payouts.</h2></div>
         {payouts.isError && <p className="mt-5 text-sm text-[hsl(var(--destructive))]">{payouts.error.message}</p>}
-        <div className="mt-6 space-y-3">{(payouts.data ?? []).length ? (payouts.data ?? []).map((payout) => <div key={payout.id} className="rounded-xl border border-[hsl(var(--border))] p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-bold">{payout.seller?.display_name ?? 'Seller'}</p><p className="mt-1 break-all text-xs text-[hsl(var(--muted-foreground))]">{payout.seller?.email ?? payout.seller_id}</p></div><span className="font-display text-lg font-bold">{naira(Number(payout.amount))}</span></div><div className="mt-4 flex items-center justify-between"><span className="text-xs font-bold uppercase text-[hsl(var(--muted-foreground))]">{payout.status}</span><div className="flex gap-2">{payout.status === 'pending' && <button disabled={updatePayout.isPending} onClick={() => updatePayout.mutate({ id: payout.id, status: 'approved' })} className="rounded-lg bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-bold text-[hsl(var(--primary))]">Approve</button>}{payout.status === 'approved' && <button disabled={updatePayout.isPending} onClick={() => updatePayout.mutate({ id: payout.id, status: 'paid' })} className="rounded-lg bg-[hsl(var(--primary))] px-3 py-2 text-xs font-bold text-[hsl(var(--primary-foreground))]">Mark paid</button>}{payout.status === 'pending' && <button disabled={updatePayout.isPending} onClick={() => updatePayout.mutate({ id: payout.id, status: 'rejected' })} className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-bold">Reject</button>}</div></div></div>) : <p className="rounded-xl border border-dashed border-[hsl(var(--border))] p-5 text-sm text-[hsl(var(--muted-foreground))]">No payout requests are waiting.</p>}</div>
+        <div className="mt-6 space-y-3">{(payouts.data ?? []).length ? (payouts.data ?? []).map((payout) => <div key={payout.id} className="rounded-xl border border-[hsl(var(--border))] p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-bold">{payout.seller?.full_name ?? 'Seller'}</p><p className="mt-1 break-all text-xs text-[hsl(var(--muted-foreground))]">{payout.seller?.email ?? payout.seller_id}</p></div><span className="font-display text-lg font-bold">{naira(Number(payout.amount))}</span></div><div className="mt-4 flex items-center justify-between"><span className="text-xs font-bold uppercase text-[hsl(var(--muted-foreground))]">{payout.status}</span><div className="flex gap-2">{payout.status === 'pending' && <button disabled={updatePayout.isPending} onClick={() => updatePayout.mutate({ id: payout.id, status: 'approved' })} className="rounded-lg bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-bold text-[hsl(var(--primary))]">Approve</button>}{payout.status === 'approved' && <button disabled={updatePayout.isPending} onClick={() => updatePayout.mutate({ id: payout.id, status: 'paid' })} className="rounded-lg bg-[hsl(var(--primary))] px-3 py-2 text-xs font-bold text-[hsl(var(--primary-foreground))]">Mark paid</button>}{payout.status === 'pending' && <button disabled={updatePayout.isPending} onClick={() => updatePayout.mutate({ id: payout.id, status: 'rejected' })} className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-bold">Reject</button>}</div></div></div>) : <p className="rounded-xl border border-dashed border-[hsl(var(--border))] p-5 text-sm text-[hsl(var(--muted-foreground))]">No payout requests are waiting.</p>}</div>
       </section>
     </div>
+    <section className="mt-7 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8">
+      <div className="flex items-center justify-between gap-4"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Accounts</p><h2 className="mt-2 font-display text-2xl font-bold">Registered users</h2></div><span className="rounded-full bg-[hsl(var(--secondary))] px-3 py-1 text-xs font-bold">{users.data?.length ?? 0} profiles</span></div>
+      {users.isLoading ? <p className="mt-5 text-sm text-[hsl(var(--muted-foreground))]">Loading profiles…</p> : users.isError ? <p className="mt-5 text-sm text-[hsl(var(--destructive))]">Profile list unavailable: {users.error.message}</p> : (users.data ?? []).length ? <div className="mt-5 divide-y divide-[hsl(var(--border))]">{(users.data ?? []).map((account) => <div key={account.id} className="flex flex-wrap items-center justify-between gap-3 py-4"><div className="min-w-0"><p className="truncate font-bold">{account.full_name || 'Unnamed user'}</p><p className="mt-1 break-all text-xs text-[hsl(var(--muted-foreground))]">{account.email}</p></div><span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${account.role === 'admin' ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]' : 'bg-[hsl(var(--secondary))]'}`}>{account.role}</span></div>)}</div> : <p className="mt-5 rounded-xl border border-dashed border-[hsl(var(--border))] p-5 text-sm text-[hsl(var(--muted-foreground))]">No profiles were returned. Check the admin SELECT policy on public.profiles.</p>}
+    </section>
     <div className="mt-7 rounded-2xl bg-[hsl(var(--secondary))] p-5 text-sm text-[hsl(var(--muted-foreground))]">Payout approval only records status. A real bank transfer must be made and confirmed separately. Paystack settlement webhooks are not configured by this Supabase setup.</div>
   </DashboardFrame>{notice && <Notice message={notice} />}</>;
-}
-
-function LegacyAdmin() {
-  const { data: apiAdmin, isLoading } = useGetAdminOverview({ query: { retry: false, queryKey: getGetAdminOverviewQueryKey() } });
-  const admin = apiAdmin ?? demoAdmin;
-  const { notice, notify } = useDemoNotice();
-  const [tab, setTab] = useState('Overview');
-  const action = (label: string) => { setTab(label); if (label !== 'Overview') notify(`${label} queue selected — demo data is ready for review.`); };
-  return <><DashboardFrame title="Marketplace control room" eyebrow="Admin desk" nav={[{ label: 'Overview', icon: LayoutDashboard, active: tab === 'Overview' }, { label: 'Approvals', icon: ClipboardList }, { label: 'Payouts', icon: Wallet }, { label: 'Revenue', icon: BarChart3 }]} onAction={action}><div className="mb-7 flex flex-col gap-2 rounded-2xl border border-[hsl(var(--primary)/.25)] bg-[hsl(var(--secondary))] p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Administrator</p><p className="mt-1 font-bold">{ADMIN_EMAIL}</p></div><span className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-extrabold text-[hsl(var(--primary-foreground))]"><BadgeCheck size={14} /> Full access</span><p className="text-xs text-[hsl(var(--muted-foreground))] sm:max-w-xs">Approve products, see all revenue and manage seller payouts for {BUSINESS_NAME}.</p></div>{isLoading ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map((item) => <div className="h-36 animate-pulse rounded-2xl bg-[hsl(var(--muted))]" key={item} />)}</div> : <><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total revenue" value={naira(admin.totalRevenue)} detail="Gross marketplace volume" icon={BarChart3} accent /><MetricCard label="Commission earned" value={naira(admin.commission)} detail="15% marketplace share" icon={TrendingUp} /><MetricCard label="Pending approvals" value={admin.pendingApprovals.toString()} detail="Need a human look" icon={Clock3} /><MetricCard label="Payouts this cycle" value={naira(admin.payouts)} detail="Next run · Friday" icon={Wallet} /></div><div className="mt-7 grid gap-7 xl:grid-cols-[1.1fr_.9fr]"><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><div className="flex items-center justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Needs a look</p><h2 className="mt-2 font-display text-2xl font-bold">Keep the shelf trustworthy.</h2></div><button onClick={() => action('Approvals')} className="text-sm font-bold text-[hsl(var(--primary))]" data-testid="button-review-approvals">Review all</button></div><div className="mt-7 space-y-3">{demoProducts.slice(0, 3).map((product, index) => <div key={product.id} className="flex items-center gap-3 rounded-xl border border-[hsl(var(--border))] p-3"><div className="h-11 w-11 rounded-lg" style={{ backgroundColor: product.coverColor }} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{product.title}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{product.seller.name} · submitted {index + 1}h ago</p></div><button onClick={() => notify(`${product.title} approved for the shelf.`)} className="rounded-lg bg-[hsl(var(--secondary))] px-3 py-2 text-xs font-bold text-[hsl(var(--primary))]" data-testid={`button-approve-${product.id}`}>Approve</button><button onClick={() => notify('Product held for a closer review.')} className="rounded-lg p-2 text-[hsl(var(--muted-foreground))]" aria-label={`More actions for ${product.title}`} data-testid={`button-more-${product.id}`}><MoreHorizontal size={17} /></button></div>)}</div></section><section className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><div className="flex items-start justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Volume pulse</p><h2 className="mt-2 font-display text-2xl font-bold">The marketplace is moving.</h2></div><span className="rounded-full bg-[hsl(var(--secondary))] px-3 py-1 text-xs font-bold text-[hsl(var(--primary))]">30 days</span></div><div className="mt-8 flex h-48 items-end gap-1.5">{[28, 36, 32, 44, 42, 57, 52, 68, 64, 78, 74, 91].map((height, index) => <div key={index} className="flex-1 rounded-t-md bg-[hsl(var(--primary))]" style={{ height: `${height}%`, opacity: .32 + index / 24 }} />)}</div><div className="mt-5 grid grid-cols-3 gap-3 border-t border-[hsl(var(--border))] pt-5"><div><p className="font-display text-xl font-bold">+24%</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">GMV</p></div><div><p className="font-display text-xl font-bold">+18%</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">New sellers</p></div><div><p className="font-display text-xl font-bold">4.8</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Avg rating</p></div></div></section></div><div className="mt-7 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Operations note</p><h2 className="mt-2 font-display text-xl font-bold">The next payout run is Friday.</h2><p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">Review the pending queue before 4:00 PM to keep seller trust high.</p></div><button onClick={() => action('Payouts')} className="flex items-center justify-center gap-2 rounded-xl border border-[hsl(var(--border))] px-4 py-3 text-sm font-bold hover:bg-[hsl(var(--secondary))]" data-testid="button-open-payouts">Open payouts <ArrowRight size={16} /></button></div></div></>}</DashboardFrame><Notice message={notice} /></>;
 }
 
 function AccountPage({ redirectTo = '/account' }: { redirectTo?: string }) {
@@ -547,12 +545,22 @@ function AdminAccess() {
   return <AccessGate requiredRole="admin" />;
 }
 
+function DashboardRoute() {
+  const { user, profile, loading, profileLoading } = useAuth();
+  if (loading || (user && profileLoading)) return <Shell cartCount={0} onCart={() => undefined}><main className="mx-auto max-w-2xl px-5 py-24 text-center"><LoaderCircle className="mx-auto spin text-[hsl(var(--primary))]" size={28} /><p className="mt-4">Checking your LessonMart account…</p></main></Shell>;
+  if (!user) return <AccountPage redirectTo="/dashboard" />;
+  if (!profile) return <AccountPage redirectTo="/dashboard" />;
+  if (profile.role === 'admin') return <Admin />;
+  if (profile.role === 'seller') return <Seller />;
+  return <AccountPage redirectTo="/dashboard" />;
+}
+
 function AccountRoute() {
   return <AccountPage />;
 }
 
 function AppRouter() {
-  return <AuthProvider><ErrorBoundary resetKey={window.location.pathname}><Switch><Route path="/" component={Marketplace} /><Route path="/seller" component={SellerAccess} /><Route path="/admin" component={AdminAccess} /><Route path="/account" component={AccountRoute} /><Route path="/contact" component={Contact} /><Route component={NotFound} /></Switch></ErrorBoundary></AuthProvider>;
+  return <AuthProvider><ErrorBoundary resetKey={window.location.pathname}><Switch><Route path="/" component={Marketplace} /><Route path="/marketplace" component={Marketplace} /><Route path="/dashboard" component={DashboardRoute} /><Route path="/seller" component={SellerAccess} /><Route path="/admin" component={AdminAccess} /><Route path="/account" component={AccountRoute} /><Route path="/contact" component={Contact} /><Route component={NotFound} /></Switch></ErrorBoundary></AuthProvider>;
 }
 
 function App() {

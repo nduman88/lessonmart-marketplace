@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!active) return;
       if (sessionError) setError(sessionError.message);
       setSession(data.session);
+      setProfileLoading(Boolean(data.session?.user.id));
       setLoading(false);
     }).catch((sessionError: unknown) => {
       if (!active) return;
@@ -50,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setProfile(null);
+      setProfileLoading(Boolean(nextSession?.user.id));
       setError(null);
       setLoading(false);
     });
@@ -75,9 +77,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .select('id,email,full_name,role,avatar_url')
           .eq('id', userId)
           .maybeSingle();
+        if (profileError) throw profileError;
         if (!active) return;
         setProfile(data as LessonMartProfile | null);
-        setError(profileError?.message ?? null);
+        setError(null);
         setProfileLoading(false);
       } catch (profileError) {
         if (!active) return;

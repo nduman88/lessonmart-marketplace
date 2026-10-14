@@ -49,6 +49,31 @@ type PublicProfile = {
   avatar_url: string | null;
 };
 
+export type AdminProfileRecord = {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: 'buyer' | 'seller' | 'admin';
+  avatar_url: string | null;
+  created_at: string;
+};
+
+type PayoutRow = {
+  id: string;
+  seller_id: string;
+  amount: number | string;
+  status: 'pending' | 'approved' | 'paid' | 'rejected';
+  created_at: string;
+};
+
+type PayoutSeller = {
+  id: string;
+  full_name: string | null;
+  email: string;
+};
+
+export type AdminPayoutRecord = PayoutRow & { seller: PayoutSeller | null };
+
 const coverColors = ['#0D7A5F', '#213B70', '#7C3AED', '#0E7490', '#9F1239', '#166534'];
 const productFields = 'id,seller_id,title,description,subject,grade_level,price,preview_url,file_url,watermarked_file_url,status,created_at';
 const validStatuses = new Set<ProductStatus>(['draft', 'pending', 'approved', 'rejected']);
@@ -261,7 +286,7 @@ export async function setProductReviewStatus(productId: string, status: 'approve
   if (error) throw error;
 }
 
-export async function listPendingPayouts() {
+export async function listPendingPayouts(): Promise<AdminPayoutRecord[]> {
   const client = requireSupabase();
   const { data, error } = await client
     .from('payout_requests')
@@ -269,16 +294,16 @@ export async function listPendingPayouts() {
     .in('status', ['pending', 'approved'])
     .order('created_at', { ascending: true });
   if (error) throw error;
-  const payouts = data ?? [];
-  const sellerIds = [...new Set(payouts.map((payout: { seller_id: string }) => payout.seller_id))];
-  if (!sellerIds.length) return payouts.map((payout: Record<string, unknown>) => ({ ...payout, seller: null }));
+  const payouts = (data ?? []) as PayoutRow[];
+  const sellerIds = [...new Set(payouts.map((payout) => payout.seller_id))];
+  if (!sellerIds.length) return payouts.map((payout) => ({ ...payout, seller: null }));
   const { data: profiles, error: profileError } = await client
     .from('profiles')
     .select('id,full_name,email')
     .in('id', sellerIds);
   if (profileError) throw profileError;
-  const profileById = new Map((profiles ?? []).map((profile: { id: string; full_name: string | null; email: string }) => [profile.id, profile]));
-  return payouts.map((payout: { seller_id: string }) => ({
+  const profileById = new Map((profiles ?? []).map((profile: PayoutSeller) => [profile.id, profile]));
+  return payouts.map((payout) => ({
     ...payout,
     seller: profileById.get(payout.seller_id) ?? null,
   }));
@@ -287,4 +312,13 @@ export async function listPendingPayouts() {
 export async function setPayoutStatus(payoutId: string, status: 'approved' | 'paid' | 'rejected') {
   const { error } = await requireSupabase().from('payout_requests').update({ status }).eq('id', payoutId);
   if (error) throw error;
+}
+
+export async function listProfilesForAdmin(): Promise<AdminProfileRecord[]> {
+  const { data, error } = await requireSupabase()
+    .from('profiles')
+    .select('id,email,full_name,role,avatar_url,created_at')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as AdminProfileRecord[];
 }

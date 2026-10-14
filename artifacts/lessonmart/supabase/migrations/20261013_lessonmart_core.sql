@@ -1,5 +1,6 @@
--- LessonMart core schema for Supabase.
--- Safe to re-run: objects are created conditionally and demo rows are insert-once.
+-- LEGACY ONLY: this migration uses an older LessonMart schema and inserts demo products.
+-- Do not run it against the existing profiles/products/orders tables.
+-- For the current Supabase project use 20261014_connect_existing_lessonmart.sql.
 
 create extension if not exists pgcrypto;
 
