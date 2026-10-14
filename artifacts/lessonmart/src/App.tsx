@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Route, Switch, useLocation } from 'wouter';
 import {
@@ -35,7 +35,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import {
   activateSellerAccount,
   createPendingOrder,
@@ -371,15 +371,14 @@ function PayoutModal({ amount, onClose, onSubmit }: { amount: number; onClose: (
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[hsl(var(--foreground)/.55)] p-5 backdrop-blur-sm"><div className="w-full max-w-md rounded-[1.5rem] bg-[hsl(var(--card))] p-7 shadow-2xl"><div className="flex justify-between"><div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Payouts</p><h2 className="mt-2 font-display text-3xl font-bold">Take your work home.</h2></div><button onClick={onClose} aria-label="Close payout modal" data-testid="button-close-payout"><X /></button></div><p className="mt-5 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Save a payout request for admin review. This does not initiate a bank transfer or send an email notification. For help, contact <a className="font-bold text-[hsl(var(--primary))] hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.</p><div className="mt-6 rounded-xl bg-[hsl(var(--secondary))] p-5"><span className="text-xs text-[hsl(var(--muted-foreground))]">Available</span><p className="mt-1 font-display text-3xl font-bold">{naira(amount)}</p></div><button onClick={onSubmit} disabled={amount <= 0} className="mt-6 w-full rounded-xl bg-[hsl(var(--accent))] py-3.5 font-extrabold text-[hsl(var(--accent-foreground))] disabled:opacity-50" data-testid="button-request-payout">Request payout</button></div></div>;
 }
 
-function Admin() {
-  const { profile } = useAuth();
+function Admin({ adminEmail }: { adminEmail: string }) {
   const client = useQueryClient();
   const [tab, setTab] = useState('Overview');
   const { notice, notify } = useNotice();
   const overview = useQuery({ queryKey: ['supabase', 'admin-overview'], queryFn: getAdminDashboard, retry: false });
   const approvals = useQuery({ queryKey: ['supabase', 'admin-pending-products'], queryFn: listPendingProducts, retry: false });
   const payouts = useQuery({ queryKey: ['supabase', 'admin-pending-payouts'], queryFn: listPendingPayouts, retry: false });
-  const users = useQuery({ queryKey: ['supabase', 'admin-profiles'], queryFn: listProfilesForAdmin, enabled: profile?.role === 'admin', retry: false });
+  const users = useQuery({ queryKey: ['supabase', 'admin-profiles'], queryFn: listProfilesForAdmin, retry: false });
   const invalidateAdmin = () => {
     void client.invalidateQueries({ queryKey: ['supabase', 'admin-overview'] });
     void client.invalidateQueries({ queryKey: ['supabase', 'admin-pending-products'] });
@@ -405,7 +404,7 @@ function Admin() {
   ];
   return <><DashboardFrame title="Marketplace control room" eyebrow="Admin desk" nav={nav} onAction={setTab}>
     <div className="mb-7 flex flex-col gap-2 rounded-2xl border border-[hsl(var(--primary)/.25)] bg-[hsl(var(--secondary))] p-5 sm:flex-row sm:items-center sm:justify-between">
-      <div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Administrator</p><p className="mt-1 font-bold">{profile?.email ?? ADMIN_EMAIL}</p></div>
+      <div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Administrator</p><p className="mt-1 font-bold">{adminEmail}</p></div>
       <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-extrabold text-[hsl(var(--primary-foreground))]"><BadgeCheck size={14} /> Full access</span>
       <p className="text-xs text-[hsl(var(--muted-foreground))] sm:max-w-xs">Approve products, see paid-order revenue and manage payout requests for {BUSINESS_NAME}.</p>
     </div>
@@ -496,14 +495,13 @@ function AccountPage({ redirectTo = '/account' }: { redirectTo?: string }) {
   </main></Shell>;
 }
 
-function AccessGate({ requiredRole }: { requiredRole: 'seller' | 'admin' }) {
+function AccessGate() {
   const { user, profile, loading, profileLoading, error } = useAuth();
-  const path = requiredRole === 'admin' ? '/admin' : '/seller';
+  const path = '/seller';
   if (loading || (user && profileLoading)) return <Shell cartCount={0} onCart={() => undefined}><main className="mx-auto max-w-2xl px-5 py-24 text-center"><LoaderCircle className="mx-auto spin text-[hsl(var(--primary))]" size={28} /><p className="mt-4">Checking your LessonMart account…</p></main></Shell>;
   if (!user) return <AccountPage redirectTo={path} />;
   if (!profile) return <Shell cartCount={0} onCart={() => undefined}><main className="mx-auto max-w-2xl px-5 py-24"><div className="rounded-2xl border border-[hsl(var(--destructive)/.4)] bg-[hsl(var(--card))] p-6"><h1 className="font-display text-2xl font-bold">Account setup is incomplete.</h1><p className="mt-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]">Your Supabase login succeeded, but its LessonMart profile is not available. Apply the migration file in the Supabase SQL Editor and sign in again.{error ? ` Details: ${error}` : ''}</p><Link href="/account" className="mt-5 inline-flex rounded-xl bg-[hsl(var(--primary))] px-4 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))]">Account settings</Link></div></main></Shell>;
-  if (requiredRole === 'admin' && profile.role !== 'admin') return <Shell cartCount={0} onCart={() => undefined}><main className="mx-auto max-w-2xl px-5 py-24"><div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6"><h1 className="font-display text-2xl font-bold">Administrator access required.</h1><p className="mt-3 text-sm text-[hsl(var(--muted-foreground))]">This account does not have the administrator role. The owner role is assigned by a protected database trigger; it cannot be enabled from the browser.</p><Link href="/" className="mt-5 inline-flex rounded-xl bg-[hsl(var(--primary))] px-4 py-3 text-sm font-bold text-[hsl(var(--primary-foreground))]">Back to marketplace</Link></div></main></Shell>;
-  return requiredRole === 'admin' ? <Admin /> : <Seller />;
+  return <Seller />;
 }
 
 function Contact() {
@@ -538,11 +536,71 @@ function Contact() {
 }
 
 function SellerAccess() {
-  return <AccessGate requiredRole="seller" />;
+  return <AccessGate />;
 }
 
 function AdminAccess() {
-  return <AccessGate requiredRole="admin" />;
+  const [, navigate] = useLocation();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminEmail, setAdminEmail] = useState(ADMIN_EMAIL);
+  const [loading, setLoading] = useState(true);
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+
+    const checkAdmin = async () => {
+      try {
+        if (!supabase) {
+          navigate('/login');
+          setLoading(false);
+          return;
+        }
+
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (!isMounted.current) return;
+        if (userError || !user) {
+          navigate('/login');
+          setLoading(false);
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role, email')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (!isMounted.current) return;
+        if (profileError) console.error('Could not load admin profile:', profileError.message);
+
+        console.log('Current role:', profile?.role);
+        const role = String(profile?.role ?? '').toLowerCase();
+        const email = String(profile?.email || user.email || '').trim().toLowerCase();
+        if (role !== 'admin' && email !== ADMIN_EMAIL.toLowerCase()) {
+          navigate('/');
+          setLoading(false);
+          return;
+        }
+
+        setAdminEmail(email || ADMIN_EMAIL);
+        setIsAdmin(true);
+        setLoading(false);
+      } catch (authError) {
+        if (!isMounted.current) return;
+        console.error('Admin access check failed:', authError);
+        navigate('/');
+        setLoading(false);
+      }
+    };
+
+    void checkAdmin();
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  if (loading) return <Shell cartCount={0} onCart={() => undefined}><main className="mx-auto max-w-2xl px-5 py-24 text-center"><LoaderCircle className="mx-auto spin text-[hsl(var(--primary))]" size={28} /><p className="mt-4">Checking your LessonMart account…</p></main></Shell>;
+  return isAdmin ? <Admin adminEmail={adminEmail} /> : null;
 }
 
 function DashboardRoute() {
@@ -550,7 +608,7 @@ function DashboardRoute() {
   if (loading || (user && profileLoading)) return <Shell cartCount={0} onCart={() => undefined}><main className="mx-auto max-w-2xl px-5 py-24 text-center"><LoaderCircle className="mx-auto spin text-[hsl(var(--primary))]" size={28} /><p className="mt-4">Checking your LessonMart account…</p></main></Shell>;
   if (!user) return <AccountPage redirectTo="/dashboard" />;
   if (!profile) return <AccountPage redirectTo="/dashboard" />;
-  if (profile.role === 'admin') return <Admin />;
+  if (profile.role === 'admin') return <Admin adminEmail={profile.email || ADMIN_EMAIL} />;
   if (profile.role === 'seller') return <Seller />;
   return <AccountPage redirectTo="/dashboard" />;
 }
@@ -559,8 +617,12 @@ function AccountRoute() {
   return <AccountPage />;
 }
 
+function LoginRoute() {
+  return <AccountPage redirectTo="/admin" />;
+}
+
 function AppRouter() {
-  return <AuthProvider><ErrorBoundary resetKey={window.location.pathname}><Switch><Route path="/" component={Marketplace} /><Route path="/marketplace" component={Marketplace} /><Route path="/dashboard" component={DashboardRoute} /><Route path="/seller" component={SellerAccess} /><Route path="/admin" component={AdminAccess} /><Route path="/account" component={AccountRoute} /><Route path="/contact" component={Contact} /><Route component={NotFound} /></Switch></ErrorBoundary></AuthProvider>;
+  return <AuthProvider><ErrorBoundary resetKey={window.location.pathname}><Switch><Route path="/" component={Marketplace} /><Route path="/marketplace" component={Marketplace} /><Route path="/dashboard" component={DashboardRoute} /><Route path="/seller" component={SellerAccess} /><Route path="/admin" component={AdminAccess} /><Route path="/login" component={LoginRoute} /><Route path="/account" component={AccountRoute} /><Route path="/contact" component={Contact} /><Route component={NotFound} /></Switch></ErrorBoundary></AuthProvider>;
 }
 
 function App() {
