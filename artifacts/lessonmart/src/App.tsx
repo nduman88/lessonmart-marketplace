@@ -379,6 +379,10 @@ function Admin({ adminEmail }: { adminEmail: string }) {
   const approvals = useQuery({ queryKey: ['supabase', 'admin-pending-products'], queryFn: listPendingProducts, retry: false });
   const payouts = useQuery({ queryKey: ['supabase', 'admin-pending-payouts'], queryFn: listPendingPayouts, retry: false });
   const users = useQuery({ queryKey: ['supabase', 'admin-profiles'], queryFn: listProfilesForAdmin, retry: false });
+    // Moses Nduka 30% Commission
+  const totalSales = (overview.data as any)?.totalSales || (overview.data as any)?.totalRevenue || 0;
+  const myCommission = totalSales * 0.30;
+  const sellersPayout = totalSales * 0.70;
   const invalidateAdmin = () => {
     void client.invalidateQueries({ queryKey: ['supabase', 'admin-overview'] });
     void client.invalidateQueries({ queryKey: ['supabase', 'admin-pending-products'] });
@@ -407,6 +411,24 @@ function Admin({ adminEmail }: { adminEmail: string }) {
       <div><p className="text-xs font-extrabold uppercase tracking-[.18em] text-[hsl(var(--primary))]">Administrator</p><p className="mt-1 font-bold">{adminEmail}</p></div>
       <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-extrabold text-[hsl(var(--primary-foreground))]"><BadgeCheck size={14} /> Full access</span>
       <p className="text-xs text-[hsl(var(--muted-foreground))] sm:max-w-xs">Approve products, see paid-order revenue and manage payout requests for {BUSINESS_NAME}.</p>
+    </div>
+        {/* Moses Nduka 30% Commission Dashboard */}
+    <div className="mb-7 grid gap-5 md:grid-cols-3">
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+        <p className="text-xs font-extrabold uppercase tracking-[.18em] text-emerald-700">TOTAL SALES</p>
+        <p className="mt-2 font-display text-3xl font-bold text-emerald-900">₦{Number(totalSales).toLocaleString()}</p>
+        <p className="mt-1 text-xs text-emerald-700">All paid orders</p>
+      </div>
+      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
+        <p className="text-xs font-extrabold uppercase tracking-[.18em] text-blue-700">YOUR 30% PROFIT</p>
+        <p className="mt-2 font-display text-3xl font-bold text-blue-900">₦{Number(myCommission).toLocaleString()}</p>
+        <p className="mt-1 text-xs text-blue-700">Platform commission</p>
+      </div>
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+        <p className="text-xs font-extrabold uppercase tracking-[.18em] text-amber-700">SELLERS 70%</p>
+        <p className="mt-2 font-display text-3xl font-bold text-amber-900">₦{Number(sellersPayout).toLocaleString()}</p>
+        <p className="mt-1 text-xs text-amber-700">To be paid out</p>
+      </div>
     </div>
     {(overview.isError || approvals.isError || payouts.isError || users.isError) && <p className="mb-5 rounded-xl border border-[hsl(var(--destructive)/.4)] p-4 text-sm" role="alert">Some admin data could not be loaded: {[overview.error, approvals.error, payouts.error, users.error].filter(Boolean).map((error) => error?.message).join(' · ')}. Apply the schema-matched LessonMart migration in Supabase and confirm this profile has role `admin`.</p>}
     <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
