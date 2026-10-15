@@ -649,7 +649,7 @@ function AppRouter() {
 }
 
 function App() {
-    return <><QueryClientProvider client={queryClient}><TooltipProvider><AppRouter /><Toaster /></TooltipProvider></QueryClientProvider><Analytics /></>;
+      return <QueryClientProvider client={queryClient}><TooltipProvider><AppRouter /><Toaster /><Analytics /></TooltipProvider></QueryClientProvider>;
 }
 
 export default App;
